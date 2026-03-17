@@ -1,0 +1,59 @@
+# ==============================================================================
+# ZTRACK API - Conexión a MongoDB y Redis EXTERNOS
+# ==============================================================================
+# Uso: docker compose -f docker-compose.external.yml up -d
+#
+# Configurar en .env o variables de entorno:
+#   MONGO_DETAILS_OK=mongodb://tu-servidor-mongo:27017
+#   BD_DETAILS_OK=ztrack_db
+#   REDIS_HOST=tu-servidor-redis
+#   REDIS_PORT=6379
+#
+# Para MongoDB/Redis en el host (desde WSL/Linux):
+#   MONGO_DETAILS_OK=mongodb://host.docker.internal:27017
+#   REDIS_HOST=host.docker.internal
+#
+# Para MongoDB Atlas u otro cloud:
+#   MONGO_DETAILS_OK=mongodb+srv://user:pass@cluster.mongodb.net/ztrack_db
+# ==============================================================================
+
+services:
+  api:
+    build: .
+    container_name: ztrack_api
+    env_file: .env
+    ports:
+      - "9050:9050"
+    environment:
+      APP_ENV: production
+      # Sobrescribir con .env o -e en docker run
+      #MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:-mongodb://host.docker.internal:27017}
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:-mongodb://ztrackperu:Proyectoztrack2025mongo@161.132.53.51/:27017?authSource=admin}
+      BD_DETAILS_OK: ${BD_DETAILS_OK:-PROYECTOZTRACKAPI}
+      REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    extra_hosts:
+      # Permite conectar a servicios en el host (Linux/WSL)
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9050/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  batch:
+    build: .
+    container_name: ztrack_batch
+    env_file: .env
+    command: ["python", "-m", "app.workers.batch_writer"]
+    environment:
+      APP_ENV: production
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:-mongodb://ztrackperu:Proyectoztrack2025mongo@161.132.53.51/:27017?authSource=admin}
+      BD_DETAILS_OK: ${BD_DETAILS_OK:-PROYECTOZTRACKAPI}
+      REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
+      REDIS_PORT: ${REDIS_PORT:-6379}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped

@@ -1,0 +1,81 @@
+# ==============================================================================
+# ZTRACK API - Docker Compose
+# MongoDB: URL externa (.env) | Redis: interno en puerto 6380 (evita conflicto)
+# ==============================================================================
+# Requisito: crear .env con MONGO_DETAILS_OK y BD_DETAILS_OK
+#   cp .env.example .env && nano .env
+#
+# Redis usa puerto 6380 en el host (no 6379) para no chocar con otros Redis.
+# Desde la red Docker, api/batch conectan a redis:6379 (interno).
+# ==============================================================================
+
+services:
+  # ----------------------------------------------------------------------------
+  # API FastAPI + Gunicorn
+  # ----------------------------------------------------------------------------
+  api:
+    build: .
+    container_name: ztrack_api
+    env_file: .env
+    ports:
+      - "9050:9050"
+    environment:
+      # Respeta .env: APP_ENV=development habilita /docs y reload
+      APP_ENV: ${APP_ENV:-production}
+      ENABLE_DOCS: ${ENABLE_DOCS:-false}
+      # MongoDB: obligatorio en .env (URL externa, Atlas, etc.)
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?MONGO_DETAILS_OK debe estar definido en .env}
+      BD_DETAILS_OK: ${BD_DETAILS_OK:-ztrack_db}
+      # Redis: servicio interno (puerto 6379 dentro de la red Docker)
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9050/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ----------------------------------------------------------------------------
+  # Batch Writer (Redis → MongoDB)
+  # ----------------------------------------------------------------------------
+  batch:
+    build: .
+    container_name: ztrack_batch
+    env_file: .env
+    command: ["python", "-m", "app.workers.batch_writer"]
+    environment:
+      APP_ENV: ${APP_ENV:-production}
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?MONGO_DETAILS_OK debe estar definido en .env}
+      BD_DETAILS_OK: ${BD_DETAILS_OK:?-BD_DETAILS_OK debe estar definido en .env}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # Redis interno (puerto 6380 en host para evitar conflicto con otros Redis)
+  # ----------------------------------------------------------------------------
+  redis:
+    image: redis:7-alpine
+    container_name: ztrack_redis
+    ports:
+      - "6380:6379"   # host:container — 6380 evita conflicto con redis en 6379
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  redis_data:

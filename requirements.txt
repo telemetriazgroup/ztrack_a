@@ -1,0 +1,49 @@
+# ==============================================================================
+# ZTRACK API - Requirements Python 3.12
+# Adaptación del proyecto original con Motor → PyMongo async nativo
+# ==============================================================================
+
+# Framework ASGI
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+gunicorn==23.0.0
+
+# MongoDB - REEMPLAZA Motor (motor-asyncio está siendo descontinuado)
+# PyMongo 4.9+ incluye AsyncMongoClient nativo, sin necesidad de Motor
+pymongo[srv]==4.10.1
+
+# Serialización BSON (ObjectId, etc.) - incluido en pymongo pero se importa directamente
+# bson ya viene con pymongo, no instalar por separado
+
+# Redis - buffer de escrituras entre FastAPI y MongoDB
+redis[hiredis]==5.2.1
+
+# Validación - Pydantic v2 (lo que ya usa el proyecto)
+pydantic==2.10.3
+pydantic-settings==2.7.0
+
+# Variables de entorno - reemplaza python-decouple del original
+python-dotenv==1.0.1
+
+# Seguridad - hashing de API Keys para dispositivos nuevos
+passlib[bcrypt]==1.7.4
+
+# Logging estructurado
+structlog==24.4.0
+
+# Métricas Prometheus
+prometheus-client==0.21.1
+
+# Testing
+httpx==0.28.1
+pytest==8.3.4
+pytest-asyncio==0.25.0
+pytest-cov==6.0.0
+Faker==33.1.0
+
+# NOTA: Se elimina 'python-decouple' del original.
+# Reemplazado por 'python-dotenv' + 'pydantic-settings' que ofrecen
+# validación de tipos en las variables de entorno.
+#
+# NOTA: Se elimina 'motor' del original.
+# Reemplazado por pymongo[srv]>=4.9 con AsyncMongoClient nativo.

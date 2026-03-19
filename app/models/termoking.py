@@ -4,21 +4,20 @@ app/models/termoking.py
 Portado del original server/models/termoking.py → TermoKingSchema.
 
 CAMBIOS:
-  - Se corrige el campo d08 duplicado del original (había dos definiciones)
-  - Se agrega validación flexible de fecha (formato MongoDB {"$date":"..."})
-  - Se agrega to_mongo_document() para preparar el documento antes de insertar
-  - Se agrega campo 'secured' para Seguridad Progresiva
-  - El campo 'estado' mantiene default=1 (igual que el original)
+  - IMEI acepta formato compuesto: UNIT222,ZGRU9999994
+  - Canales d00-d08: aceptan hex o no (ej: d07='0,0,0,0,-1.0') — no se rechaza
+  - fecha: se asigna en to_mongo_document (servidor), no se exige en payload
+  - Política: guardar todas las tramas; validación/corrección en subproceso posterior
 """
 import re
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, field_validator
 
-HEX_REGEX = re.compile(r"^[0-9A-Fa-f]+$")
+# IMEI: 15 dígitos, o formato UNIT222,ZGRU9999994, o alfanumérico flexible
 IMEI_STRICT = re.compile(r"^\d{15}$")
-IMEI_FLEXIBLE = re.compile(r"^[a-zA-Z0-9_-]{4,20}$")
+IMEI_COMPOSITE = re.compile(r"^[a-zA-Z0-9_,\.\-]{4,80}$")  # UNIT222,ZGRU9999994
 
 
 class TermoKingSchema(BaseModel):
@@ -56,58 +55,46 @@ class TermoKingSchema(BaseModel):
     rs: Optional[str] = None
     r: Optional[Any] = None      # Resultado de comandos ejecutados
 
-    # Igual que el original: Optional con default=1
     estado: Optional[int] = 1
 
-    # Fecha flexible: acepta {"$date":"..."}, string ISO o null
-    fecha: Optional[datetime] = None
-
-    model_config = {"populate_by_name": True, "extra": "allow"}
-
-    @model_validator(mode="before")
-    @classmethod
-    def parse_fecha(cls, values: dict) -> dict:
-        """
-        Convierte el campo fecha a datetime antes de validar.
-        Soporta: {"$date":"..."}, string ISO, datetime nativo, o null.
-        Nunca rechaza la trama por fecha corrupta: la ignora.
-        """
-        fecha = values.get("fecha")
-        if fecha is None:
-            return values
-        if isinstance(fecha, dict):
-            date_str = fecha.get("$date")
-            if date_str:
-                try:
-                    values["fecha"] = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-                except (ValueError, TypeError):
-                    values["fecha"] = None
-        elif isinstance(fecha, str):
-            try:
-                values["fecha"] = datetime.fromisoformat(fecha.replace("Z", "+00:00"))
-            except (ValueError, TypeError):
-                values["fecha"] = None
-        return values
+    # fecha no se exige: se asigna en to_mongo_document (servidor)
+    fecha: Optional[Any] = None
 
     @field_validator("i")
     @classmethod
     def validate_imei(cls, v: str) -> str:
-        v = v.strip()
-        if IMEI_STRICT.match(v) or IMEI_FLEXIBLE.match(v):
+        """Acepta IMEI numérico, UNIT222,ZGRU9999994, o alfanumérico flexible."""
+        v = str(v).strip()
+        if not v:
+            raise ValueError("Campo 'i' vacío")
+        if IMEI_STRICT.match(v) or IMEI_COMPOSITE.match(v):
+            return v
+        # Último recurso: cualquier string no vacío (4-80 chars)
+        if 4 <= len(v) <= 80:
             return v
         raise ValueError(f"ID de dispositivo inválido: '{v}'")
 
-    @field_validator("d02", "d03", "d04", "d05", "d06", "d07", "d08", "d1", "d2", "d3", "d4")
+    @field_validator(
+        "d00", "d01", "d02", "d03", "d04", "d05", "d06", "d07", "d08",
+        "d1", "d2", "d3", "d4",
+        mode="before",
+    )
     @classmethod
-    def normalize_hex(cls, v: Optional[str]) -> Optional[str]:
-        """Normaliza a mayúsculas si es HEX válido. Si no, lo guarda tal cual."""
+    def accept_any_string(cls, v: Any) -> Optional[str]:
+        """
+        Acepta hex, CSV (ej: 0,0,0,0,-1.0) o cualquier string. No rechaza por formato.
+        Hex puro se normaliza a mayúsculas; el resto se guarda tal cual.
+        """
         if v is None:
-            return v
-        v = v.strip()
-        if not v:
             return None
-        v_up = v.upper()
-        return v_up if HEX_REGEX.match(v_up) else v
+        s = str(v).strip()
+        if not s:
+            return None
+        # Si es hex puro (solo 0-9A-Fa-f), normalizar a mayúsculas
+        clean = "".join(c for c in s if c in "0123456789ABCDEFabcdef")
+        if len(clean) == len(s):
+            return s.upper()
+        return s
 
     @property
     def ip_address(self) -> Optional[str]:
@@ -123,24 +110,15 @@ class TermoKingSchema(BaseModel):
     ) -> dict:
         """
         Prepara el documento para MongoDB.
-        Agrega received_at (timestamp servidor), secured y clock_drift.
+        - fecha: siempre fecha actual del servidor
+        - estado: siempre 1 (predefinido)
         """
         if received_at is None:
             received_at = datetime.now(timezone.utc)
-
         doc = self.model_dump(mode="python")
-
-        # Timestamp del servidor (siempre presente, incluso si fecha=None)
+        doc["fecha"] = received_at
+        doc["estado"] = 1
         doc["received_at"] = received_at
-
-        # Drift del reloj dispositivo vs servidor
-        if self.fecha is not None:
-            device_ts = self.fecha
-            if device_ts.tzinfo is None:
-                device_ts = device_ts.replace(tzinfo=timezone.utc)
-            recv = received_at if received_at.tzinfo else received_at.replace(tzinfo=timezone.utc)
-            doc["clock_drift_seconds"] = round(abs((recv - device_ts).total_seconds()), 1)
-
         doc["secured"] = secured
         return doc
 
@@ -148,15 +126,9 @@ class TermoKingSchema(BaseModel):
         "populate_by_name": True,
         "extra": "allow",
         "json_schema_extra": {
-            "example": {
-                "i": "860389053784506",
-                "ip": "10.81.213.33,17,0",
-                "c": "",
-                "d01": "UNIT111",
-                "d02": "1B0204000082A7000401FE7F...",
-                "d03": "1B0204000082A701...",
-                "estado": 2,
-                "fecha": {"$date": "2025-11-04T14:34:25.870Z"}
-            }
+            "examples": [
+                {"i": "860389053784506", "d01": "UNIT111", "d02": "1B0204000082A7..."},
+                {"i": "UNIT222,ZGRU9999994", "d00": "FFFFFFFF1B02...", "d07": "0,0,0,0,-1.0"},
+            ]
         }
     }

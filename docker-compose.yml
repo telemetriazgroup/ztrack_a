@@ -17,11 +17,14 @@ services:
     build: .
     container_name: ztrack_api
     env_file: .env
+    volumes:
+      # Montar código para que --reload detecte cambios
+      - .:/app
     ports:
       - "9050:9050"
     environment:
-      # Respeta .env: APP_ENV=development habilita /docs y reload
-      APP_ENV: ${APP_ENV:-production}
+      # development = /docs + reload | production = sin reload
+      APP_ENV: ${APP_ENV:-development}
       ENABLE_DOCS: ${ENABLE_DOCS:-false}
       # MongoDB: obligatorio en .env (URL externa, Atlas, etc.)
       MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?MONGO_DETAILS_OK debe estar definido en .env}
@@ -51,7 +54,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-production}
       MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?MONGO_DETAILS_OK debe estar definido en .env}
-      BD_DETAILS_OK: ${BD_DETAILS_OK:?-BD_DETAILS_OK debe estar definido en .env}
+      BD_DETAILS_OK: ${BD_DETAILS_OK:-ztrack_db}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:

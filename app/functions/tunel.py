@@ -20,7 +20,7 @@ async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
 
 
 async def insertar_comando(datos: dict) -> dict:
-    control_col = get_control_collection()
+    control_col = get_control_collection("Tunel")
     datos["fecha_creacion"] = datetime.now()
     if not datos.get("fecha_ejecucion"):
         datos["fecha_ejecucion"] = None
@@ -31,7 +31,7 @@ async def insertar_comando(datos: dict) -> dict:
 
 async def buscar_imei(datos: dict) -> list:
     imei = datos.get("imei", "")
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "Tunel"))
     query = {}
     fi = datos.get("fecha_inicio", "0")
     ff = datos.get("fecha_fin", "0")
@@ -49,14 +49,14 @@ async def buscar_imei(datos: dict) -> list:
 
 async def datos_totales(datos: dict) -> list:
     imei = datos.get("imei", "")
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "Tunel"))
     cursor = col.find({}, {"_id": 0}).sort("fecha", -1).limit(500)
     return await cursor.to_list(length=500)
 
 
 async def datos_totales_ok(datos: dict) -> list:
     imei = datos.get("imei", "")
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "Tunel"))
     cursor = col.find({}, {"_id": 0, "i": 1, "estado": 1, "fecha": 1}).sort("fecha", -1).limit(200)
     return await cursor.to_list(length=200)
 
@@ -71,7 +71,7 @@ async def grafica_total_ok(datos: dict) -> list:
 
 async def buscar_live(datos: dict) -> Optional[dict]:
     imei = datos.get("imei", "")
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "Tunel"))
     return await col.find_one({}, {"_id": 0}, sort=[("fecha", -1)])
 
 

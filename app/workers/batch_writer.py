@@ -4,8 +4,8 @@ app/workers/batch_writer.py — Worker batch Redis → MongoDB.
 Lee tramas de la cola Redis en lotes y las persiste en la colección
 correcta de MongoDB (una colección por dispositivo, patrón bd_gene).
 
-Se ejecuta como proceso independiente para no competir con los
-workers de Gunicorn que reciben las tramas.
+Redis serializa con JSON: datetime → string. Al deserializar, received_at
+viene como string; _mes_anio y bd_gene deben manejarlo para el nombre de colección.
 
 Ejecución:
     python -m app.workers.batch_writer
@@ -24,6 +24,16 @@ logger = get_logger(__name__)
 _shutdown = False
 
 
+def _to_datetime(v) -> datetime:
+    """Convierte string ISO a datetime (viene de Redis/JSON)."""
+    if isinstance(v, datetime):
+        return v
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return datetime.now(timezone.utc)
+
+
 def _handle_signal(signum, frame):
     global _shutdown
     logger.info("Shutdown señalado — esperando batch actual")
@@ -32,24 +42,35 @@ def _handle_signal(signum, frame):
 
 async def _insert_batch(documents: list[dict]) -> int:
     """
-    Inserta un lote de documentos agrupados por IMEI.
-    Cada IMEI tiene su propia colección MongoDB (patrón bd_gene original).
+    Inserta un lote de documentos agrupados por colección.
+    TermoKing: TK_{imei}_{MM}_{YYYY} | Túnel: TUNEL_{imei}_{MM}_{YYYY}
+    Usa received_at del doc para determinar mes/año.
     """
     from pymongo.errors import BulkWriteError
     from app.database.mongodb import bd_gene, collection
 
-    # Agrupar por IMEI para un insertMany por colección
-    by_imei: dict[str, list] = {}
+    # Agrupar por nombre de colección (imei + tipo + mes/año)
+    by_collection: dict[str, list] = {}
     for doc in documents:
         imei = doc.get("i", "unknown")
-        by_imei.setdefault(imei, []).append(doc)
+        tipo = doc.get("tipo_dispositivo", "TermoKing")
+        dt = doc.get("received_at")
+        col_name = bd_gene(imei, tipo, dt)
+        by_collection.setdefault(col_name, []).append(doc)
 
     total_inserted = 0
 
     with MONGO_BATCH_INSERT_DURATION.time():
-        for imei, imei_docs in by_imei.items():
-            col = collection(bd_gene(imei))
+        for col_name, imei_docs in by_collection.items():
+            col = collection(col_name)
             try:
+                # Asegurar fecha, estado; normalizar datetime (Redis/JSON devuelve strings)
+                now = datetime.now(timezone.utc)
+                for d in imei_docs:
+                    d.setdefault("estado", 1)
+                    raw = d.get("received_at") or d.get("fecha") or now
+                    d["fecha"] = _to_datetime(raw) if not isinstance(raw, datetime) else raw
+                    d.setdefault("received_at", d["fecha"])
                 result = await col.insert_many(imei_docs, ordered=False)
                 inserted = len(result.inserted_ids)
                 total_inserted += inserted
@@ -60,12 +81,12 @@ async def _insert_batch(documents: list[dict]) -> int:
                 MONGO_INSERT_ERRORS.inc(errors)
                 logger.warning(
                     "Batch parcial con errores",
-                    imei=imei,
+                    coleccion=col_name,
                     insertados=inserted,
                     errores=errors,
                 )
             except Exception as e:
-                logger.error("Error al insertar batch", imei=imei, error=str(e))
+                logger.error("Error al insertar batch", coleccion=col_name, error=str(e))
                 MONGO_INSERT_ERRORS.inc()
 
     MONGO_BATCH_SIZE.observe(total_inserted)

@@ -28,7 +28,6 @@ from typing import Optional
 from app.core.logging import get_logger
 from app.database.mongodb import (
     bd_gene,
-    collection,
     crear_indices_coleccion_dispositivo,
     get_control_collection,
     get_dispositivos_collection,
@@ -63,6 +62,9 @@ async def guardar_datos(
     if not imei:
         return "sin comandos pendientes"
 
+    # Inyectar tipo para que batch_writer use la colección correcta (TK_/TUNEL_)
+    ztrack_data["tipo_dispositivo"] = tipo_dispositivo
+
     # ── 1. Encolar trama en Redis (no bloqueante, < 1ms) ────────────────────
     # Equivale al: await data_collection.insert_one(ztrack_data) del original
     # pero sin bloquear el response al dispositivo.
@@ -71,14 +73,11 @@ async def guardar_datos(
         # Redis caído: modo degradado, se loggea pero no se rechaza
         logger.error("No se pudo encolar trama - Redis caído", imei=imei)
 
-    # ── 2. Sincronizar colección 'dispositivos' ──────────────────────────────
-    # Replica exactamente el bloque dispositivo_encontrado del original.
+    # ── 2. Sincronizar colección TK_dispositivos_MM_YYYY o TUNEL_dispositivos_MM_YYYY
     await _sync_dispositivos(imei=imei, ztrack_data=ztrack_data, secured=secured, tipo=tipo_dispositivo)
 
-    # ── 3. Consultar y despachar comando pendiente ───────────────────────────
-    # Replica exactamente el bloque control_encontrado del original.
-    # Es síncrono porque el dispositivo necesita el comando en esta respuesta.
-    comando = await _get_and_dispatch_command(imei=imei)
+    # ── 3. Consultar y despachar comando de TK_control_MM_YYYY o TUNEL_control_MM_YYYY
+    comando = await _get_and_dispatch_command(imei=imei, tipo=tipo_dispositivo)
 
     return comando
 
@@ -90,15 +89,9 @@ async def _sync_dispositivos(
     tipo: str = "TermoKing",
 ) -> None:
     """
-    Replica el bloque del original:
-
-      dispositivo_encontrado = await dispositivos_collection.find_one({"imei": imei, "estado": 1})
-      if dispositivo_encontrado:
-          Hay_dispositivo = dispositivo_encontrado['imei']
-      verificar_dispositivo = await dispositivos_collection.update_one(...)
-          if Hay_dispositivo else await dispositivos_collection.insert_one(...)
+    Sincroniza en TK_dispositivos_MM_YYYY o TUNEL_dispositivos_MM_YYYY.
     """
-    dispositivos_col = get_dispositivos_collection()
+    dispositivos_col = get_dispositivos_collection(tipo)
     ip_raw = ztrack_data.get("ip", "")
     ip_clean = ip_raw.split(",")[0].strip() if ip_raw else None
 
@@ -122,7 +115,7 @@ async def _sync_dispositivos(
         )
     else:
         # No existe → auto-registrar (igual que el original)
-        # Original: insert_one({"imei":..., "estado":1, "fecha":..., "tipo":"TermoKing"})
+        # La trama NO se guarda aquí: va por Redis → batch_writer → TK_{imei}_MM_YYYY
         now = datetime.now(timezone.utc)
         try:
             await dispositivos_col.insert_one({
@@ -135,8 +128,8 @@ async def _sync_dispositivos(
                 "secured": secured,
                 "api_key_hash": None,  # None hasta que tenga firmware actualizado
             })
-            # Crear índices en la nueva colección del dispositivo
-            col_name = bd_gene(imei)
+            # Crear índices en la colección de tramas del dispositivo (TK_{imei}_MM_YYYY)
+            col_name = bd_gene(imei, tipo)
             await crear_indices_coleccion_dispositivo(col_name)
             logger.info("Dispositivo auto-registrado", imei=imei, tipo=tipo, secured=secured)
         except Exception as e:
@@ -144,18 +137,11 @@ async def _sync_dispositivos(
                 logger.error("Error al auto-registrar dispositivo", imei=imei, error=str(e))
 
 
-async def _get_and_dispatch_command(imei: str) -> str:
+async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:
     """
-    Replica el bloque del original:
-
-      control_encontrado = await control_collection.find_one({"imei": imei, "estado": 1})
-      if control_encontrado:
-          veces_control = control_encontrado['estado'] - 1 if control_encontrado['comando'] else 0
-          comando = control_encontrado['comando']
-          await control_collection.update_one(..., {"$set": {"estado": veces_control, "status": 2, ...}})
-      return comando
+    Consulta TK_control_MM_YYYY o TUNEL_control_MM_YYYY y despacha comando.
     """
-    control_col = get_control_collection()
+    control_col = get_control_collection(tipo)
 
     try:
         control_encontrado = await control_col.find_one(

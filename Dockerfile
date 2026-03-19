@@ -42,5 +42,5 @@ EXPOSE 9050
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:9050/health')" || exit 1
 
-# Gunicorn como proceso principal
-CMD ["gunicorn", "-c", "gunicorn.conf.py", "app.main:app"]
+# Gunicorn como proceso principal (--reload para desarrollo)
+CMD ["gunicorn", "-c", "gunicorn.conf.py", "--reload", "app.main:app"]

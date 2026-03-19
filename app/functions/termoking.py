@@ -55,10 +55,10 @@ async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
 
 async def insertar_comando(datos: dict) -> dict:
     """
-    Inserta un comando de control para un dispositivo.
+    Inserta un comando de control en TK_control_MM_YYYY.
     El comando se retorna al dispositivo en la próxima llamada POST.
     """
-    control_col = get_control_collection()
+    control_col = get_control_collection("TermoKing")
     datos["fecha_creacion"] = datetime.now()
     if not datos.get("fecha_ejecucion"):
         datos["fecha_ejecucion"] = None
@@ -72,10 +72,10 @@ async def insertar_comando(datos: dict) -> dict:
 
 async def buscar_imei(datos: dict) -> list:
     """
-    Busca registros de un dispositivo por IMEI con filtro opcional de fechas.
+    Busca registros de un dispositivo por IMEI en TK_{imei}_MM_YYYY.
     """
     imei = datos.get("imei", "")
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "TermoKing"))
     fecha_inicio = datos.get("fecha_inicio", "0")
     fecha_fin = datos.get("fecha_fin", "0")
 
@@ -95,7 +95,7 @@ async def buscar_imei(datos: dict) -> list:
 async def datos_totales(datos: dict) -> list:
     """Lista paginada de registros del dispositivo."""
     imei = datos.get("imei", "")
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "TermoKing"))
     fecha_inicio = datos.get("fecha_inicio", "0")
     fecha_fin = datos.get("fecha_fin", "0")
 
@@ -115,7 +115,7 @@ async def datos_totales(datos: dict) -> list:
 async def datos_totales_ok(datos: dict) -> list:
     """Alias de datos_totales con proyección reducida para dashboard."""
     imei = datos.get("imei", "")
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "TermoKing"))
     cursor = col.find({}, {"_id": 0, "i": 1, "estado": 1, "fecha": 1, "d02": 1, "d03": 1}).sort("fecha", -1).limit(200)
     return await cursor.to_list(length=200)
 
@@ -133,13 +133,13 @@ async def grafica_total_ok(datos: dict) -> list:
 async def buscar_live(datos: dict) -> Optional[dict]:
     """Retorna el último registro del dispositivo (vista en vivo)."""
     imei = datos.get("imei", "")
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "TermoKing"))
     return await col.find_one({}, {"_id": 0}, sort=[("fecha", -1)])
 
 
 async def consultar_trama_ultimo(imei: str) -> Optional[dict]:
     """Retorna la última trama del dispositivo."""
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "TermoKing"))
     return await col.find_one({}, {"_id": 0}, sort=[("fecha", -1)])
 
 
@@ -147,7 +147,7 @@ async def datos_general(datos: dict) -> list:
     """Consulta general con rango de fechas y límite configurable."""
     imei = datos.get("imei", "")
     limit = datos.get("limit", 100)
-    col = collection(bd_gene(imei))
+    col = collection(bd_gene(imei, "TermoKing"))
     start_date = datos.get("start_date", "0")
     end_date = datos.get("end_date", "0")
 
@@ -174,9 +174,9 @@ async def consultar_starcool_cerro_prieto(datos: dict) -> list:
 async def ultimo_estado_dispositivos_termoking() -> list:
     """
     Retorna el resumen y último estado de todos los dispositivos TermoKing.
-    Consulta la colección 'dispositivos' y para cada uno obtiene la última trama.
+    Consulta TK_dispositivos_MM_YYYY y para cada uno obtiene la última trama de TK_{imei}_MM_YYYY.
     """
-    dispositivos_col = get_dispositivos_collection()
+    dispositivos_col = get_dispositivos_collection("TermoKing")
     cursor = dispositivos_col.find(
         {"tipo": "TermoKing"},
         {"_id": 0, "imei": 1, "estado": 1, "tipo": 1, "ultimo_dato": 1, "last_ip": 1, "secured": 1}
@@ -187,7 +187,7 @@ async def ultimo_estado_dispositivos_termoking() -> list:
     for disp in dispositivos:
         imei = disp.get("imei", "")
         try:
-            col = collection(bd_gene(imei))
+            col = collection(bd_gene(imei, "TermoKing"))
             ultima_trama = await col.find_one({}, {"_id": 0}, sort=[("fecha", -1)])
             disp["ultima_trama"] = ultima_trama
         except Exception:

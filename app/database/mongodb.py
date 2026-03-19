@@ -20,7 +20,7 @@ COMPATIBILIDAD:
   La API de las funciones es idéntica.
 """
 from datetime import datetime, timedelta
-from typing import Optional
+from typing import Any, Optional
 
 from bson.objectid import ObjectId
 from pymongo import AsyncMongoClient, ASCENDING, DESCENDING
@@ -100,24 +100,53 @@ def collection(name: str):
     Replica la función collection() del database.py original.
 
     Uso en Guardar_Datos (mismo patrón que el original):
-        data_collection = collection(bd_gene(ztrack_data['i']))
+        data_collection = collection(bd_gene(ztrack_data['i'], tipo))
     """
     return _database.get_collection(name)
 
 
-def bd_gene(imei: str) -> str:
+def _mes_anio(dt: Optional[Any] = None) -> tuple[str, str]:
+    """
+    Retorna (mes, año) para el datetime dado o el actual.
+    Acepta datetime o string ISO (viene de Redis/JSON tras serialización).
+    """
+    if dt is None:
+        d = datetime.now()
+    elif isinstance(dt, datetime):
+        d = dt
+    elif isinstance(dt, str):
+        try:
+            d = datetime.fromisoformat(dt.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            d = datetime.now()
+    else:
+        d = datetime.now()
+    return d.strftime("%m"), d.strftime("%Y")
+
+
+# Caracteres prohibidos en nombres de colección MongoDB: / \ " $ * < > : | ?
+_MONGO_SAFE_REPLACE = str.maketrans({c: "_" for c in '/\\"$*<>:|?'})
+
+
+def bd_gene(imei: str, tipo: Optional[str] = None, dt: Optional[datetime] = None) -> str:
     """
     Genera el nombre de colección para un IMEI dado.
-    Replica la función bd_gene() del sistema original.
-    Centraliza la lógica de naming que antes estaba dispersa en las functions.
+    Usa el IMEI directamente (ej: UNIT222,ZGRU9999994); solo reemplaza caracteres
+    prohibidos por MongoDB (/ \\ " $ * < > : | ?).
 
-    Ejemplo: "860389053784506" → "trama_860389053784506"
+    TermoKing: TK_{imei}_{MM}_{YYYY}  (ej: TK_UNIT222,ZGRU9999994_03_2025)
+    Túnel:     TUNEL_{imei}_{MM}_{YYYY}
     """
-    safe = "".join(c if c.isalnum() else "_" for c in str(imei))
+    safe = str(imei).strip().translate(_MONGO_SAFE_REPLACE) or "unknown"
+    mes, anio = _mes_anio(dt)
+    if tipo == "TermoKing":
+        return f"TK_{safe}_{mes}_{anio}"
+    if tipo == "Tunel":
+        return f"TUNEL_{safe}_{mes}_{anio}"
     return f"trama_{safe}"
 
 
-# ── COLECCIONES BASE (equivalente al final de database.py original) ──────────
+# ── COLECCIONES BASE ─────────────────────────────────────────────────────────────
 
 def get_log_general_collection():
     return _database.get_collection("log_general")
@@ -134,30 +163,52 @@ def get_contador_general_collection():
 def get_evento_telemetria_collection():
     return _database.get_collection("evento_telemetria")
 
-def get_dispositivos_collection():
-    return _database.get_collection("dispositivos")
 
-def get_control_collection():
-    return _database.get_collection("control")
+def get_dispositivos_collection(tipo: str = "TermoKing", dt: Optional[datetime] = None) -> Any:
+    """TK_dispositivos_MM_YYYY o TUNEL_dispositivos_MM_YYYY."""
+    mes, anio = _mes_anio(dt)
+    if tipo == "Tunel":
+        name = f"TUNEL_dispositivos_{mes}_{anio}"
+    else:
+        name = f"TK_dispositivos_{mes}_{anio}"
+    return _database.get_collection(name)
+
+
+def get_control_collection(tipo: str = "TermoKing", dt: Optional[datetime] = None) -> Any:
+    """TK_control_MM_YYYY o TUNEL_control_MM_YYYY."""
+    mes, anio = _mes_anio(dt)
+    if tipo == "Tunel":
+        name = f"TUNEL_control_{mes}_{anio}"
+    else:
+        name = f"TK_control_{mes}_{anio}"
+    return _database.get_collection(name)
 
 
 # ── ÍNDICES BASE ─────────────────────────────────────────────────────────────
 
-async def _ensure_base_indexes() -> None:
-    """Crea índices en colecciones base al arrancar."""
+async def _ensure_indexes_dispositivos(col) -> None:
+    """Crea índices en colección dispositivos (TK o TUNEL mensual)."""
     from pymongo import IndexModel
-
-    # dispositivos
-    await get_dispositivos_collection().create_indexes([
+    await col.create_indexes([
         IndexModel([("imei", ASCENDING)], name="idx_imei_unique", unique=True),
         IndexModel([("estado", ASCENDING)], name="idx_estado"),
     ])
 
-    # control
-    await get_control_collection().create_indexes([
+
+async def _ensure_indexes_control(col) -> None:
+    """Crea índices en colección control (TK o TUNEL mensual)."""
+    from pymongo import IndexModel
+    await col.create_indexes([
         IndexModel([("imei", ASCENDING), ("estado", ASCENDING)], name="idx_imei_estado"),
     ])
 
+
+async def _ensure_base_indexes() -> None:
+    """Crea índices en colecciones base del mes actual al arrancar."""
+    await _ensure_indexes_dispositivos(get_dispositivos_collection("TermoKing"))
+    await _ensure_indexes_dispositivos(get_dispositivos_collection("Tunel"))
+    await _ensure_indexes_control(get_control_collection("TermoKing"))
+    await _ensure_indexes_control(get_control_collection("Tunel"))
     logger.info("Índices base verificados")
 
 

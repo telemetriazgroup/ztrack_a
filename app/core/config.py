@@ -50,6 +50,9 @@ class Settings(BaseSettings):
     legacy_accept: bool = True
     max_payload_size_bytes: int = 16384
 
+    # Zona horaria para fechas (Docker usa UTC; datos históricos en GMT-5)
+    app_timezone: str = Field(default="America/Lima", validation_alias="APP_TIMEZONE")
+
     # Logging / Métricas
     log_level: str = "INFO"
     log_format: Literal["json", "console"] = "console"

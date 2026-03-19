@@ -10,7 +10,9 @@ CAMBIOS:
   - Política: guardar todas las tramas; validación/corrección en subproceso posterior
 """
 import re
-from datetime import datetime, timezone
+from datetime import datetime
+
+from app.core.datetime_utils import server_now
 from typing import Any, Optional
 
 from pydantic import BaseModel, Field, field_validator
@@ -114,7 +116,7 @@ class TermoKingSchema(BaseModel):
         - estado: siempre 1 (predefinido)
         """
         if received_at is None:
-            received_at = datetime.now(timezone.utc)
+            received_at = server_now()
         doc = self.model_dump(mode="python")
         doc["fecha"] = received_at
         doc["estado"] = 1

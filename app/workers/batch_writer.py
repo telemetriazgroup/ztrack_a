@@ -15,6 +15,7 @@ import signal
 from datetime import datetime, timezone
 
 from app.core.config import get_settings
+from app.core.datetime_utils import server_now
 from app.core.logging import get_logger, setup_logging
 from app.core.metrics import MONGO_BATCH_INSERT_DURATION, MONGO_BATCH_SIZE, MONGO_INSERT_ERRORS
 from app.database import mongodb
@@ -31,7 +32,7 @@ def _to_datetime(v) -> datetime:
     try:
         return datetime.fromisoformat(str(v).replace("Z", "+00:00"))
     except (ValueError, TypeError):
-        return datetime.now(timezone.utc)
+        return server_now()
 
 
 def _handle_signal(signum, frame):
@@ -65,7 +66,7 @@ async def _insert_batch(documents: list[dict]) -> int:
             col = collection(col_name)
             try:
                 # Asegurar fecha, estado; normalizar datetime (Redis/JSON devuelve strings)
-                now = datetime.now(timezone.utc)
+                now = server_now()
                 for d in imei_docs:
                     d.setdefault("estado", 1)
                     raw = d.get("received_at") or d.get("fecha") or now
@@ -122,7 +123,7 @@ async def run_batch_writer() -> None:
                 continue
 
             # Agregar timestamp de procesamiento batch
-            batch_ts = datetime.now(timezone.utc)
+            batch_ts = server_now()
             for doc in documents:
                 doc.setdefault("batch_processed_at", batch_ts)
 

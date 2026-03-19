@@ -67,8 +67,8 @@ async def add_data(
     datos_dict = jsonable_encoder(datos)
 
     # Agregar received_at y secured al documento
-    from datetime import datetime, timezone
-    received_at = datetime.now(timezone.utc)
+    from app.core.datetime_utils import server_now
+    received_at = server_now()
     doc = datos.to_mongo_document(received_at=received_at, secured=device.secured)
 
     comando = await Guardar_Datos(doc, secured=device.secured)

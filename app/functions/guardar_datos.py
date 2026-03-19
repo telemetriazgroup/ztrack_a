@@ -22,8 +22,9 @@ CÓMO FUNCIONA EL FLUJO COMPLETO:
                                        ↓
                                   Response con comando
 """
-from datetime import datetime, timezone
 from typing import Optional
+
+from app.core.datetime_utils import server_now
 
 from app.core.logging import get_logger
 from app.database.mongodb import (
@@ -101,7 +102,7 @@ async def _sync_dispositivos(
 
     if dispositivo_encontrado:
         # Existe → actualizar ultimo_dato (igual que el original)
-        update_fields = {"ultimo_dato": datetime.now(timezone.utc)}
+        update_fields = {"ultimo_dato": server_now()}
         if ip_clean:
             update_fields["last_ip"] = ip_clean
         # Migración silenciosa: si el dispositivo acaba de activar seguridad
@@ -116,7 +117,7 @@ async def _sync_dispositivos(
     else:
         # No existe → auto-registrar (igual que el original)
         # La trama NO se guarda aquí: va por Redis → batch_writer → TK_{imei}_MM_YYYY
-        now = datetime.now(timezone.utc)
+        now = server_now()
         try:
             await dispositivos_col.insert_one({
                 "imei": imei,
@@ -163,7 +164,7 @@ async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:
             {"$set": {
                 "estado": veces_control,
                 "status": 2,                    # status=2: ejecutado
-                "fecha_ejecucion": datetime.now(timezone.utc),
+                "fecha_ejecucion": server_now(),
             }},
         )
 

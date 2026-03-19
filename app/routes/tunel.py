@@ -35,8 +35,8 @@ async def add_data(
     device=Depends(progressive_auth),
 ):
     """Recepción de telemetría Túnel con Seguridad Progresiva."""
-    from datetime import datetime, timezone
-    received_at = datetime.now(timezone.utc)
+    from app.core.datetime_utils import server_now
+    received_at = server_now()
     doc = datos.to_mongo_document(received_at=received_at, secured=device.secured)
     comando = await Guardar_Datos(doc, secured=device.secured)
     return {

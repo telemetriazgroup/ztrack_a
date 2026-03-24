@@ -107,7 +107,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="ZTRACK API",
-        summary="Sistema de telemetría IoT bidireccional — TermoKing y Túnel",
+        summary="Sistema de telemetría IoT bidireccional — TermoKing, Túnel y Datos",
         version="2.0.0",
         lifespan=lifespan,
         # Documentación: ENABLE_DOCS=true o APP_ENV != production
@@ -125,12 +125,18 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Routers — mismos prefijos y tags del original ────────────────────────
+    # ── Routers ────────────────────────────────────────────────────────────────
     from app.routes.termoking import router as TermoKingRouter
     from app.routes.tunel import router as TunelRouter
+    from app.routes.datos import router as DatosRouter
+    from app.routes.starcool import router as StarcoolRouter
+    from app.routes.generador import router as GeneradorRouter
 
     app.include_router(TermoKingRouter, tags=["TermoKing"], prefix="/TermoKing")
     app.include_router(TunelRouter, tags=["Tunel"], prefix="/Tunel")
+    app.include_router(DatosRouter, tags=["Datos"], prefix="/Datos")
+    app.include_router(StarcoolRouter, tags=["Starcool"], prefix="/Starcool")
+    app.include_router(GeneradorRouter, tags=["Generador"], prefix="/Generador")
 
     # ── Root — idéntico al original ──────────────────────────────────────────
     @app.get("/", tags=["Root"])

@@ -49,7 +49,7 @@ async def guardar_datos(
     Args:
         ztrack_data:      Documento MongoDB ya preparado (con received_at, secured, etc.)
         secured:          True si el dispositivo autenticó con API Key.
-        tipo_dispositivo: "TermoKing" o "Tunel" (para el registro en 'dispositivos').
+        tipo_dispositivo: "TermoKing", "Tunel", "Datos", "Starcool" o "Generador" (para el registro en 'dispositivos').
 
     Returns:
         String del comando a ejecutar, o "sin comandos pendientes".

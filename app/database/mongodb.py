@@ -134,8 +134,11 @@ def bd_gene(imei: str, tipo: Optional[str] = None, dt: Optional[datetime] = None
     Usa el IMEI directamente (ej: UNIT222,ZGRU9999994); solo reemplaza caracteres
     prohibidos por MongoDB (/ \\ " $ * < > : | ?).
 
-    TermoKing: TK_{imei}_{MM}_{YYYY}  (ej: TK_UNIT222,ZGRU9999994_03_2025)
+    TermoKing: TK_{imei}_{MM}_{YYYY}
     Túnel:     TUNEL_{imei}_{MM}_{YYYY}
+    Datos:     D_{imei}_{MM}_{YYYY}
+    Starcool:  S_{imei}_{MM}_{YYYY}
+    Generador: G_{imei}_{MM}_{YYYY}
     """
     safe = str(imei).strip().translate(_MONGO_SAFE_REPLACE) or "unknown"
     mes, anio = _mes_anio(dt)
@@ -143,6 +146,12 @@ def bd_gene(imei: str, tipo: Optional[str] = None, dt: Optional[datetime] = None
         return f"TK_{safe}_{mes}_{anio}"
     if tipo == "Tunel":
         return f"TUNEL_{safe}_{mes}_{anio}"
+    if tipo == "Datos":
+        return f"D_{safe}_{mes}_{anio}"
+    if tipo == "Starcool":
+        return f"S_{safe}_{mes}_{anio}"
+    if tipo == "Generador":
+        return f"G_{safe}_{mes}_{anio}"
     return f"trama_{safe}"
 
 
@@ -165,20 +174,32 @@ def get_evento_telemetria_collection():
 
 
 def get_dispositivos_collection(tipo: str = "TermoKing", dt: Optional[datetime] = None) -> Any:
-    """TK_dispositivos_MM_YYYY o TUNEL_dispositivos_MM_YYYY."""
+    """TK/TUNEL/D/S_dispositivos_MM_YYYY."""
     mes, anio = _mes_anio(dt)
     if tipo == "Tunel":
         name = f"TUNEL_dispositivos_{mes}_{anio}"
+    elif tipo == "Datos":
+        name = f"D_dispositivos_{mes}_{anio}"
+    elif tipo == "Starcool":
+        name = f"S_dispositivos_{mes}_{anio}"
+    elif tipo == "Generador":
+        name = f"G_dispositivos_{mes}_{anio}"
     else:
         name = f"TK_dispositivos_{mes}_{anio}"
     return _database.get_collection(name)
 
 
 def get_control_collection(tipo: str = "TermoKing", dt: Optional[datetime] = None) -> Any:
-    """TK_control_MM_YYYY o TUNEL_control_MM_YYYY."""
+    """TK/TUNEL/D/S/G_control_MM_YYYY."""
     mes, anio = _mes_anio(dt)
     if tipo == "Tunel":
         name = f"TUNEL_control_{mes}_{anio}"
+    elif tipo == "Datos":
+        name = f"D_control_{mes}_{anio}"
+    elif tipo == "Starcool":
+        name = f"S_control_{mes}_{anio}"
+    elif tipo == "Generador":
+        name = f"G_control_{mes}_{anio}"
     else:
         name = f"TK_control_{mes}_{anio}"
     return _database.get_collection(name)
@@ -207,8 +228,14 @@ async def _ensure_base_indexes() -> None:
     """Crea índices en colecciones base del mes actual al arrancar."""
     await _ensure_indexes_dispositivos(get_dispositivos_collection("TermoKing"))
     await _ensure_indexes_dispositivos(get_dispositivos_collection("Tunel"))
+    await _ensure_indexes_dispositivos(get_dispositivos_collection("Datos"))
+    await _ensure_indexes_dispositivos(get_dispositivos_collection("Starcool"))
+    await _ensure_indexes_dispositivos(get_dispositivos_collection("Generador"))
     await _ensure_indexes_control(get_control_collection("TermoKing"))
     await _ensure_indexes_control(get_control_collection("Tunel"))
+    await _ensure_indexes_control(get_control_collection("Datos"))
+    await _ensure_indexes_control(get_control_collection("Starcool"))
+    await _ensure_indexes_control(get_control_collection("Generador"))
     logger.info("Índices base verificados")
 
 

@@ -183,6 +183,8 @@ Todas las rutas del original siguen funcionando **sin cambios en los clientes**:
 | GET  | `/health` | 🆕 Nueva |
 | GET  | `/metrics` | 🆕 Nueva (Prometheus) |
 
+**Nuevas (paridad consultas multi-mes / ventana 12 h):** `POST /TermoKing/comando/buscar/`, `POST /TermoKing/dispositivos/periodo/`, `POST /TermoKing/dispositivos/reporte_global/` y las mismas bajo `/Tunel/`. `POST /TermoKing/imei/` y `POST /Tunel/imei/` ahora recorren varios meses si el rango lo cruza; sin fechas usan las últimas 12 h.
+
 ---
 
 ## Ejecutar Tests

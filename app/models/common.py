@@ -54,6 +54,10 @@ class BusquedaSchema(BaseModel):
     imei: str = Field(...)
     fecha_inicio: Optional[str] = "0"
     fecha_fin: Optional[str] = "0"
+    mes_desde: Optional[int] = None
+    anio_desde: Optional[int] = None
+    mes_hasta: Optional[int] = None
+    anio_hasta: Optional[int] = None
 
     model_config = {
         "json_schema_extra": {
@@ -82,6 +86,27 @@ class BusquedaGeneral(BaseModel):
             }
         }
     }
+
+
+class BuscarComandosSchema(BaseModel):
+    """Búsqueda de comandos en TK_control_* / TUNEL_control_* (multi-mes)."""
+    imei: Optional[str] = None
+    fecha_inicio: Optional[str] = "0"
+    fecha_fin: Optional[str] = "0"
+    mes_desde: Optional[int] = None
+    anio_desde: Optional[int] = None
+    mes_hasta: Optional[int] = None
+    anio_hasta: Optional[int] = None
+
+
+class DispositivosPeriodoSchema(BaseModel):
+    """Listado de dispositivos en *_dispositivos_* para un rango de meses o fechas."""
+    fecha_inicio: Optional[str] = "0"
+    fecha_fin: Optional[str] = "0"
+    mes_desde: Optional[int] = None
+    anio_desde: Optional[int] = None
+    mes_hasta: Optional[int] = None
+    anio_hasta: Optional[int] = None
 
 
 class BusquedaSchema_proceso(BaseModel):

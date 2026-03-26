@@ -1,0 +1,76 @@
+# ── Secretos y entorno local ────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+!.env.example
+!.env.docker.example
+
+# ── Python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+pip-log.txt
+pip-delete-this-directory.txt
+
+.venv/
+venv/
+ENV/
+env/
+
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+cython_debug/
+
+# ── IDEs y editores ─────────────────────────────────────────────────────────
+.idea/
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+# ── SO ──────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ── Logs y temporales ───────────────────────────────────────────────────────
+*.log
+logs/
+tmp/
+temp/
+*.tmp
+
+# ── Docker ──────────────────────────────────────────────────────────────────
+docker-compose.override.yml

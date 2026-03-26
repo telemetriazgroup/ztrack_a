@@ -32,6 +32,9 @@ from app.functions.termoking import (
     consultar_trama_ultimo,
     consultar_starcool_cerro_prieto,
     ultimo_estado_dispositivos_termoking,
+    buscar_comandos_termoking,
+    dispositivos_periodo_termoking,
+    reporte_global_termoking,
 )
 from app.models.termoking import TermoKingSchema
 from app.models.common import (
@@ -41,6 +44,8 @@ from app.models.common import (
     BusquedaGeneral,
     ComandoSchema,
     BusquedaSchema_proceso,
+    BuscarComandosSchema,
+    DispositivosPeriodoSchema,
 )
 from app.middleware.auth import progressive_auth
 
@@ -120,6 +125,24 @@ async def buscar_live_ok(datos: BusquedaSchema = Body(...)):
 async def add_comando(datos: ComandoSchema = Body(...)):
     datos = jsonable_encoder(datos)
     return await insertar_comando(datos)
+
+
+@router.post("/comando/buscar/", response_description="Buscar comandos en TK_control (multi-mes).")
+async def buscar_comandos_ok(datos: BuscarComandosSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_comandos_termoking(datos)
+
+
+@router.post("/dispositivos/periodo/", response_description="Listar dispositivos en rango de fechas o meses.")
+async def dispositivos_periodo_ok(datos: DispositivosPeriodoSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await dispositivos_periodo_termoking(datos)
+
+
+@router.post("/dispositivos/reporte_global/", response_description="Resumen agregado de dispositivos en el periodo.")
+async def dispositivos_reporte_global_ok(datos: DispositivosPeriodoSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await reporte_global_termoking(datos)
 
 
 @router.post("/imei/", response_description="Datos agregados a la base de datos.")

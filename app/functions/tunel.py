@@ -7,11 +7,20 @@ Mismo patrón que termoking.py pero para dispositivos de túnel de frío.
 from datetime import datetime
 from typing import Optional
 
+from app.core.datetime_utils import server_now
 from app.core.logging import get_logger
 from app.database.mongodb import bd_gene, collection, get_control_collection
 from app.functions.guardar_datos import guardar_datos
+from app.functions.device_queries import (
+    buscar_comandos_control_multimes,
+    buscar_imei_multimes,
+    dispositivos_periodo_multimes,
+    reporte_global_dispositivos_multimes,
+)
 
 logger = get_logger(__name__)
+
+_TIPO = "Tunel"
 
 
 async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
@@ -21,7 +30,7 @@ async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
 
 async def insertar_comando(datos: dict) -> dict:
     control_col = get_control_collection("Tunel")
-    datos["fecha_creacion"] = datetime.now()
+    datos["fecha_creacion"] = server_now()
     if not datos.get("fecha_ejecucion"):
         datos["fecha_ejecucion"] = None
     result = await control_col.insert_one(datos)
@@ -30,21 +39,19 @@ async def insertar_comando(datos: dict) -> dict:
 
 
 async def buscar_imei(datos: dict) -> list:
-    imei = datos.get("imei", "")
-    col = collection(bd_gene(imei, "Tunel"))
-    query = {}
-    fi = datos.get("fecha_inicio", "0")
-    ff = datos.get("fecha_fin", "0")
-    if fi and fi != "0" and ff and ff != "0":
-        try:
-            query["fecha"] = {
-                "$gte": datetime.strptime(fi, "%d-%m-%Y_%H-%M-%S"),
-                "$lte": datetime.strptime(ff, "%d-%m-%Y_%H-%M-%S"),
-            }
-        except ValueError:
-            pass
-    cursor = col.find(query, {"_id": 0}).sort("fecha", -1).limit(100)
-    return await cursor.to_list(length=100)
+    return await buscar_imei_multimes(_TIPO, datos)
+
+
+async def buscar_comandos_tunel(datos: dict) -> dict:
+    return await buscar_comandos_control_multimes(_TIPO, datos)
+
+
+async def dispositivos_periodo_tunel(datos: dict) -> dict:
+    return await dispositivos_periodo_multimes(_TIPO, datos)
+
+
+async def reporte_global_tunel(datos: dict) -> dict:
+    return await reporte_global_dispositivos_multimes(_TIPO, datos)
 
 
 async def datos_totales(datos: dict) -> list:

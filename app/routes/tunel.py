@@ -16,12 +16,17 @@ from app.functions.tunel import (
     grafica_total_ok,
     buscar_live,
     procesar_data_termoking,
+    buscar_comandos_tunel,
+    dispositivos_periodo_tunel,
+    reporte_global_tunel,
 )
 from app.models.tunel import TunelSchema
 from app.models.common import (
     ResponseModel,
     BusquedaSchema,
     ComandoSchema,
+    BuscarComandosSchema,
+    DispositivosPeriodoSchema,
 )
 from app.middleware.auth import progressive_auth
 
@@ -63,6 +68,24 @@ async def buscar_live_ok(datos: BusquedaSchema = Body(...)):
 async def add_comando(datos: ComandoSchema = Body(...)):
     datos = jsonable_encoder(datos)
     return await insertar_comando(datos)
+
+
+@router.post("/comando/buscar/", response_description="Buscar comandos en TUNEL_control (multi-mes).")
+async def buscar_comandos_ok(datos: BuscarComandosSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_comandos_tunel(datos)
+
+
+@router.post("/dispositivos/periodo/", response_description="Listar dispositivos en rango.")
+async def dispositivos_periodo_ok(datos: DispositivosPeriodoSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await dispositivos_periodo_tunel(datos)
+
+
+@router.post("/dispositivos/reporte_global/", response_description="Resumen agregado de dispositivos.")
+async def dispositivos_reporte_global_ok(datos: DispositivosPeriodoSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await reporte_global_tunel(datos)
 
 
 @router.post("/imei/", response_description="Buscar por IMEI.")

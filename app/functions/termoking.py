@@ -28,6 +28,7 @@ from typing import Optional
 
 from bson.objectid import ObjectId
 
+from app.core.datetime_utils import server_now
 from app.core.logging import get_logger
 from app.database.mongodb import (
     bd_gene,
@@ -37,8 +38,16 @@ from app.database.mongodb import (
     guardar_evento_telemetria,
 )
 from app.functions.guardar_datos import guardar_datos
+from app.functions.device_queries import (
+    buscar_comandos_control_multimes,
+    buscar_imei_multimes,
+    dispositivos_periodo_multimes,
+    reporte_global_dispositivos_multimes,
+)
 
 logger = get_logger(__name__)
+
+_TIPO = "TermoKing"
 
 
 # ── RECEPCIÓN DE DATOS ───────────────────────────────────────────────────────
@@ -59,7 +68,7 @@ async def insertar_comando(datos: dict) -> dict:
     El comando se retorna al dispositivo en la próxima llamada POST.
     """
     control_col = get_control_collection("TermoKing")
-    datos["fecha_creacion"] = datetime.now()
+    datos["fecha_creacion"] = server_now()
     if not datos.get("fecha_ejecucion"):
         datos["fecha_ejecucion"] = None
 
@@ -72,24 +81,25 @@ async def insertar_comando(datos: dict) -> dict:
 
 async def buscar_imei(datos: dict) -> list:
     """
-    Busca registros de un dispositivo por IMEI en TK_{imei}_MM_YYYY.
+    Busca tramas por IMEI en TK_{imei}_MM_YYYY, recorriendo varios meses si el rango lo cruza.
+    Sin fechas (o "0"): últimas 12 h. Con mes_desde/anio_desde/mes_hasta/anio_hasta: rango por meses.
     """
-    imei = datos.get("imei", "")
-    col = collection(bd_gene(imei, "TermoKing"))
-    fecha_inicio = datos.get("fecha_inicio", "0")
-    fecha_fin = datos.get("fecha_fin", "0")
+    return await buscar_imei_multimes(_TIPO, datos)
 
-    query = {}
-    if fecha_inicio and fecha_inicio != "0" and fecha_fin and fecha_fin != "0":
-        try:
-            fi = datetime.strptime(fecha_inicio, "%d-%m-%Y_%H-%M-%S")
-            ff = datetime.strptime(fecha_fin, "%d-%m-%Y_%H-%M-%S")
-            query["fecha"] = {"$gte": fi, "$lte": ff}
-        except ValueError:
-            pass
 
-    cursor = col.find(query, {"_id": 0}).sort("fecha", -1).limit(100)
-    return await cursor.to_list(length=100)
+async def buscar_comandos_termoking(datos: dict) -> dict:
+    """Comandos en TK_control_* con el mismo criterio de fechas / meses."""
+    return await buscar_comandos_control_multimes(_TIPO, datos)
+
+
+async def dispositivos_periodo_termoking(datos: dict) -> dict:
+    """Lista dispositivos en TK_dispositivos_* en el rango indicado."""
+    return await dispositivos_periodo_multimes(_TIPO, datos)
+
+
+async def reporte_global_termoking(datos: dict) -> dict:
+    """Resumen agregado de dispositivos en el periodo."""
+    return await reporte_global_dispositivos_multimes(_TIPO, datos)
 
 
 async def datos_totales(datos: dict) -> list:

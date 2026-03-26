@@ -10,18 +10,20 @@ CAMBIOS:
   3. Todas las demás rutas se mantienen idénticas al original
   4. Se agrega el campo 'comando' y 'secured' en la respuesta del POST
 """
-from fastapi import APIRouter, Body, Depends, Request
+from typing import Annotated
+
+from fastapi import APIRouter, Body, Depends, HTTPException, Request
 from fastapi.encoders import jsonable_encoder
 
 from app.functions.termoking import (
     Guardar_Datos,
     Procesar_Trama,
-    buscar_imei,
+    buscar_comandos_termoking,
+    buscar_imei_termoking,
     insertar_comando,
     datos_totales,
     grafica_total,
     datos_totales_ok,
-    grafica_total_ok,
     buscar_live,
     datos_general,
     procesar_data_termoking,
@@ -32,8 +34,17 @@ from app.functions.termoking import (
     consultar_trama_ultimo,
     consultar_starcool_cerro_prieto,
     ultimo_estado_dispositivos_termoking,
+    listar_dispositivos_termoking,
+    reporte_dispositivos_termoking,
+    reporte_dispositivos_termoking_global,
 )
-from app.models.termoking import TermoKingSchema
+from app.models.termoking import (
+    TermoKingSchema,
+    TermoKingBuscarComandosSchema,
+    TermoKingBuscarImeiSchema,
+    TermoKingDispositivosPeriodoSchema,
+    TermoKingDispositivosRangoSchema,
+)
 from app.models.common import (
     ErrorResponseModel,
     ResponseModel,
@@ -116,16 +127,39 @@ async def buscar_live_ok(datos: BusquedaSchema = Body(...)):
     return await buscar_live(datos)
 
 
+@router.post(
+    "/comando/buscar/",
+    response_description="Listar comandos TK_control (12 h o rango de fechas).",
+)
+async def buscar_comandos_termoking_ok(
+    filtro: Annotated[TermoKingBuscarComandosSchema, Body()] = TermoKingBuscarComandosSchema(),
+):
+    try:
+        return await buscar_comandos_termoking(
+            imei=filtro.imei,
+            fecha_inicio=filtro.fecha_inicio,
+            fecha_fin=filtro.fecha_fin,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+
+
 @router.post("/comando/", response_description="Datos agregados a la base de datos.")
 async def add_comando(datos: ComandoSchema = Body(...)):
     datos = jsonable_encoder(datos)
     return await insertar_comando(datos)
 
 
-@router.post("/imei/", response_description="Datos agregados a la base de datos.")
-async def buscar_imei_ok(datos: BusquedaSchema = Body(...)):
-    datos = jsonable_encoder(datos)
-    return await buscar_imei(datos)
+@router.post("/imei/", response_description="Tramas por IMEI (12 h o rango; TK_{imei}_mes_año).")
+async def buscar_imei_ok(filtro: TermoKingBuscarImeiSchema = Body(...)):
+    try:
+        return await buscar_imei_termoking(
+            imei=filtro.imei,
+            fecha_inicio=filtro.fecha_inicio,
+            fecha_fin=filtro.fecha_fin,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
 
 
 @router.post("/ListarTabla/", response_description="Datos agregados a la base de datos.")
@@ -192,3 +226,38 @@ async def ultimo_estado_dispositivos_ok():
     """
     data = await ultimo_estado_dispositivos_termoking()
     return ResponseModel(data, "Último estado por dispositivo recuperado correctamente.")
+
+
+@router.post(
+    "/dispositivos/listar/",
+    response_description="Lista equipos TermoKing en TK_dispositivos_MES_AÑO.",
+)
+async def listar_dispositivos_termoking_ok(
+    periodo: Annotated[TermoKingDispositivosPeriodoSchema, Body()] = TermoKingDispositivosPeriodoSchema(),
+):
+    return await listar_dispositivos_termoking(mes=periodo.mes, anio=periodo.anio)
+
+
+@router.post(
+    "/dispositivos/reporte/",
+    response_description="Reporte online / wait / offline según ultimo_dato.",
+)
+async def reporte_dispositivos_termoking_ok(
+    periodo: Annotated[TermoKingDispositivosPeriodoSchema, Body()] = TermoKingDispositivosPeriodoSchema(),
+):
+    return await reporte_dispositivos_termoking(mes=periodo.mes, anio=periodo.anio)
+
+
+@router.post(
+    "/dispositivos/reporte-global/",
+    response_description="Reporte multi-mes (TK_dispositivos).",
+)
+async def reporte_dispositivos_termoking_global_ok(
+    rango: TermoKingDispositivosRangoSchema = Body(...),
+):
+    return await reporte_dispositivos_termoking_global(
+        mes_desde=rango.mes_desde,
+        anio_desde=rango.anio_desde,
+        mes_hasta=rango.mes_hasta,
+        anio_hasta=rango.anio_hasta,
+    )

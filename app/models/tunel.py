@@ -9,7 +9,7 @@ from datetime import datetime
 from app.core.datetime_utils import server_now
 from typing import Any, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.models.termoking import IMEI_COMPOSITE, IMEI_STRICT
 
@@ -95,3 +95,121 @@ class TunelSchema(BaseModel):
         doc["received_at"] = received_at
         doc["secured"] = secured
         return doc
+
+
+class TunelDispositivosPeriodoSchema(BaseModel):
+    mes: Optional[int] = Field(None, ge=1, le=12)
+    anio: Optional[int] = Field(None, ge=2000, le=2100)
+
+    model_config = {"json_schema_extra": {"example": {"mes": 3, "anio": 2026}}}
+
+
+def _cantidad_meses_inclusivo_tunel(
+    anio_desde: int, mes_desde: int, anio_hasta: int, mes_hasta: int
+) -> int:
+    n = 0
+    y, m = anio_desde, mes_desde
+    while (y, m) <= (anio_hasta, mes_hasta):
+        n += 1
+        m += 1
+        if m > 12:
+            m = 1
+            y += 1
+    return n
+
+
+class TunelDispositivosRangoSchema(BaseModel):
+    mes_desde: int = Field(..., ge=1, le=12)
+    anio_desde: int = Field(..., ge=2000, le=2100)
+    mes_hasta: int = Field(..., ge=1, le=12)
+    anio_hasta: int = Field(..., ge=2000, le=2100)
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "mes_desde": 1,
+                "anio_desde": 2025,
+                "mes_hasta": 3,
+                "anio_hasta": 2026,
+            }
+        }
+    }
+
+    @model_validator(mode="after")
+    def validar_rango(self) -> "TunelDispositivosRangoSchema":
+        if (self.anio_desde, self.mes_desde) > (self.anio_hasta, self.mes_hasta):
+            raise ValueError(
+                "Periodo inválido: mes_desde/anio_desde debe ser anterior o igual a mes_hasta/anio_hasta"
+            )
+        n = _cantidad_meses_inclusivo_tunel(
+            self.anio_desde, self.mes_desde, self.anio_hasta, self.mes_hasta
+        )
+        if n > 36:
+            raise ValueError("El rango no puede superar 36 meses")
+        return self
+
+
+class TunelBuscarComandosSchema(BaseModel):
+    imei: Optional[str] = None
+    fecha_inicio: Optional[str] = None
+    fecha_fin: Optional[str] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "imei": "867858039011138",
+                "fecha_inicio": "01-03-2026_00-00-00",
+                "fecha_fin": "24-03-2026_23-59-59",
+            }
+        }
+    }
+
+    @model_validator(mode="after")
+    def fechas_en_par(self) -> "TunelBuscarComandosSchema":
+        def _non_empty(v: Optional[str]) -> bool:
+            return bool(v and str(v).strip())
+
+        if _non_empty(self.fecha_inicio) != _non_empty(self.fecha_fin):
+            raise ValueError(
+                "Envíe fecha_inicio y fecha_fin juntas, u omita ambas para usar las últimas 12 horas"
+            )
+        return self
+
+
+class TunelBuscarImeiSchema(BaseModel):
+    imei: str = Field(...)
+    fecha_inicio: Optional[str] = None
+    fecha_fin: Optional[str] = None
+
+    model_config = {
+        "json_schema_extra": {
+            "example": {
+                "imei": "867858039011138",
+                "fecha_inicio": "01-03-2026_00-00-00",
+                "fecha_fin": "24-03-2026_23-59-59",
+            }
+        }
+    }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalizar_fechas_opcionales(cls, data: Any) -> Any:
+        if not isinstance(data, dict):
+            return data
+        out = dict(data)
+        for k in ("fecha_inicio", "fecha_fin"):
+            v = out.get(k)
+            if v is not None and str(v).strip() in ("", "0"):
+                out[k] = None
+        return out
+
+    @model_validator(mode="after")
+    def fechas_en_par(self) -> "TunelBuscarImeiSchema":
+        def _non_empty(v: Optional[str]) -> bool:
+            return bool(v and str(v).strip())
+
+        if _non_empty(self.fecha_inicio) != _non_empty(self.fecha_fin):
+            raise ValueError(
+                "Envíe fecha_inicio y fecha_fin juntas, u omita ambas para usar las últimas 12 horas"
+            )
+        return self

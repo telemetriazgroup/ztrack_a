@@ -1,35 +1,41 @@
 # ==============================================================================
 # ZTRACK API - Docker Compose
-# MongoDB: URL externa (.env) | Redis: interno en puerto 6380 (evita conflicto)
-# ==============================================================================
-# Requisito: crear .env con MONGO_DETAILS_OK y BD_DETAILS_OK
-#   cp .env.example .env && nano .env
 #
-# Redis usa puerto 6380 en el host (no 6379) para no chocar con otros Redis.
-# Desde la red Docker, api/batch conectan a redis:6379 (interno).
+# MongoDB PRINCIPAL: en el servidor (ya instalado), no en contenedor.
+#   En .env apunta MONGO_DETAILS_OK al host donde escucha Mongo, p. ej.:
+#     mongodb://usuario:pass@host.docker.internal:27017/?authSource=admin
+#     mongodb://172.17.0.1:27017   (puente Docker en Linux, si aplica)
+#     mongodb://IP_LAN_DEL_SERVIDOR:27017
+#
+# MongoDB RESPALDO (opcional): otra instancia o Atlas; URI completa en .env:
+#     MONGO_BACKUP_URI=mongodb+srv://... o mongodb://host:27017
+#     MONGO_BACKUP_DB=nombre_bd   (vacío = mismo que BD_DETAILS_OK)
+#
+# Redis: servicio interno; puerto 6380 en el host (evita conflicto con Redis local).
+#
+# Requisito: .env con al menos MONGO_DETAILS_OK y BD_DETAILS_OK
+#   cp .env.example .env && nano .env
 # ==============================================================================
 
 services:
-  # ----------------------------------------------------------------------------
-  # API FastAPI + Gunicorn
-  # ----------------------------------------------------------------------------
   api:
     build: .
     container_name: ztrack_api
     env_file: .env
     volumes:
-      # Montar código para que --reload detecte cambios
       - .:/app
     ports:
       - "9050:9050"
+    extra_hosts:
+      # Permite alcanzar MongoDB en el host Linux/WSL desde el contenedor
+      - "host.docker.internal:host-gateway"
     environment:
-      # development = /docs + reload | production = sin reload
       APP_ENV: ${APP_ENV:-development}
       ENABLE_DOCS: ${ENABLE_DOCS:-false}
-      # MongoDB: obligatorio en .env (URL externa, Atlas, etc.)
-      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?MONGO_DETAILS_OK debe estar definido en .env}
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?Definir MONGO_DETAILS_OK en .env (Mongo en el servidor)}
       BD_DETAILS_OK: ${BD_DETAILS_OK:-ztrack_db}
-      # Redis: servicio interno (puerto 6379 dentro de la red Docker)
+      MONGO_BACKUP_URI: ${MONGO_BACKUP_URI:-}
+      MONGO_BACKUP_DB: ${MONGO_BACKUP_DB:-}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
@@ -43,18 +49,19 @@ services:
       retries: 3
       start_period: 30s
 
-  # ----------------------------------------------------------------------------
-  # Batch Writer (Redis → MongoDB)
-  # ----------------------------------------------------------------------------
   batch:
     build: .
     container_name: ztrack_batch
     env_file: .env
     command: ["python", "-m", "app.workers.batch_writer"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       APP_ENV: ${APP_ENV:-production}
-      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?MONGO_DETAILS_OK debe estar definido en .env}
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?Definir MONGO_DETAILS_OK en .env}
       BD_DETAILS_OK: ${BD_DETAILS_OK:-ztrack_db}
+      MONGO_BACKUP_URI: ${MONGO_BACKUP_URI:-}
+      MONGO_BACKUP_DB: ${MONGO_BACKUP_DB:-}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
@@ -62,14 +69,11 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # ----------------------------------------------------------------------------
-  # Redis interno (puerto 6380 en host para evitar conflicto con otros Redis)
-  # ----------------------------------------------------------------------------
   redis:
     image: redis:7-alpine
     container_name: ztrack_redis
     ports:
-      - "6380:6379"   # host:container — 6380 evita conflicto con redis en 6379
+      - "6380:6379"
     volumes:
       - redis_data:/data
     healthcheck:

@@ -3,8 +3,9 @@
 Sistema de telemetría IoT para dispositivos **TermoKing** y **Túnel**.  
 Adaptación del proyecto original con arquitectura de alta disponibilidad.
 
+docker compose up -d --build
 ---
-
+docker compose up --build
 ## Qué cambió vs. el proyecto original
 
 | Aspecto | Original | Esta versión |
@@ -96,11 +97,12 @@ MongoDB
 
 ### Opción 1: Docker (recomendado)
 
-**Stack con MongoDB externo + Redis interno** (puerto 6380):
+**Stack con MongoDB en el servidor (no en contenedor) + Redis interno** (puerto 6380):
 
 ```bash
 cp .env.example .env
-# Editar .env: MONGO_DETAILS_OK (URL de tu MongoDB), BD_DETAILS_OK
+# Editar .env: MONGO_DETAILS_OK apunta al Mongo instalado en el host (ej. host.docker.internal:27017)
+# Opcional: MONGO_BACKUP_URI y MONGO_BACKUP_DB para duplicar escrituras (Starcool/Generador/Datos)
 nano .env
 docker compose up -d
 curl http://localhost:9050/health
@@ -130,8 +132,8 @@ sudo systemctl start ztrack_api ztrack_batch
 
 | Modo | Comando | MongoDB | Redis |
 |------|---------|---------|-------|
-| Actual | `docker compose up -d` | URL externa (.env) | Contenedor, puerto **6380** |
-| Externos | `docker compose -f docker-compose.external.yml up -d` | Host / Atlas / externo | Host / externo |
+| Actual | `docker compose up -d` | Principal en el servidor (.env); respaldo opcional (`MONGO_BACKUP_URI`) | Contenedor, puerto **6380** |
+| Externos | `docker compose -f docker-compose.external.yml up -d` | Host / Atlas / enlace | Host / externo |
 
 **Redis en puerto 6380**: evita conflicto con otros Redis en 6379. Desde la red Docker, api/batch usan `redis:6379`; desde el host, `localhost:6380`.
 
@@ -158,6 +160,9 @@ Compatible con el `.env` original:
 # Nombres del original (siguen funcionando)
 MONGO_DETAILS_OK=mongodb://localhost:27017
 BD_DETAILS_OK=ztrack_db
+# Opcional: respaldo (misma estructura de colecciones)
+# MONGO_BACKUP_URI=mongodb+srv://...
+# MONGO_BACKUP_DB=ztrack_db
 
 # Nuevas variables
 REDIS_HOST=localhost

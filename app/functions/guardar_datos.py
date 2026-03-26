@@ -28,10 +28,15 @@ from app.core.datetime_utils import server_now
 
 from app.core.logging import get_logger
 from app.database.mongodb import (
+    backup_db_configured,
     bd_gene,
     crear_indices_coleccion_dispositivo,
+    crear_indices_coleccion_dispositivo_backup,
+    es_tipo_respaldo,
     get_control_collection,
+    get_control_collection_backup,
     get_dispositivos_collection,
+    get_dispositivos_collection_backup,
 )
 from app.services import redis_service
 
@@ -114,24 +119,50 @@ async def _sync_dispositivos(
             {"imei": imei, "estado": 1},
             {"$set": update_fields},
         )
+        if es_tipo_respaldo(tipo) and backup_db_configured():
+            try:
+                bcol = get_dispositivos_collection_backup(tipo)
+                await bcol.update_one(
+                    {"imei": imei, "estado": 1},
+                    {"$set": update_fields},
+                )
+            except Exception as e:
+                logger.warning(
+                    "Mongo backup: sync dispositivos update falló",
+                    imei=imei,
+                    error=str(e),
+                )
     else:
         # No existe → auto-registrar (igual que el original)
         # La trama NO se guarda aquí: va por Redis → batch_writer → TK_{imei}_MM_YYYY
         now = server_now()
+        doc_disp = {
+            "imei": imei,
+            "estado": 1,
+            "fecha": now,
+            "tipo": tipo,
+            "ultimo_dato": now,
+            "last_ip": ip_clean,
+            "secured": secured,
+            "api_key_hash": None,  # None hasta que tenga firmware actualizado
+        }
         try:
-            await dispositivos_col.insert_one({
-                "imei": imei,
-                "estado": 1,
-                "fecha": now,
-                "tipo": tipo,
-                "ultimo_dato": now,
-                "last_ip": ip_clean,
-                "secured": secured,
-                "api_key_hash": None,  # None hasta que tenga firmware actualizado
-            })
+            await dispositivos_col.insert_one(doc_disp)
             # Crear índices en la colección de tramas del dispositivo (TK_{imei}_MM_YYYY)
             col_name = bd_gene(imei, tipo)
             await crear_indices_coleccion_dispositivo(col_name)
+            if es_tipo_respaldo(tipo) and backup_db_configured():
+                try:
+                    bcol = get_dispositivos_collection_backup(tipo)
+                    doc_b = {k: v for k, v in doc_disp.items() if k != "_id"}
+                    await bcol.insert_one(doc_b)
+                    await crear_indices_coleccion_dispositivo_backup(col_name)
+                except Exception as e:
+                    logger.warning(
+                        "Mongo backup: sync dispositivos insert falló",
+                        imei=imei,
+                        error=str(e),
+                    )
             logger.info("Dispositivo auto-registrado", imei=imei, tipo=tipo, secured=secured)
         except Exception as e:
             if "duplicate key" not in str(e).lower():
@@ -159,14 +190,29 @@ async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:
         # Mismo cálculo que el original
         veces_control = estado_actual - 1 if comando else 0
 
+        fe = server_now()
+        set_cmd = {
+            "estado": veces_control,
+            "status": 2,                    # status=2: ejecutado
+            "fecha_ejecucion": fe,
+        }
         await control_col.update_one(
             {"imei": imei, "estado": {"$gt": 0}},
-            {"$set": {
-                "estado": veces_control,
-                "status": 2,                    # status=2: ejecutado
-                "fecha_ejecucion": server_now(),
-            }},
+            {"$set": set_cmd},
         )
+        if es_tipo_respaldo(tipo) and backup_db_configured():
+            try:
+                bcol = get_control_collection_backup(tipo)
+                await bcol.update_one(
+                    {"imei": imei, "estado": {"$gt": 0}},
+                    {"$set": set_cmd},
+                )
+            except Exception as e:
+                logger.warning(
+                    "Mongo backup: despacho comando falló",
+                    imei=imei,
+                    error=str(e),
+                )
 
         logger.info("Comando despachado", imei=imei, comando=comando, intentos_restantes=veces_control)
         return comando

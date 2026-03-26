@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     mongo_min_pool_size: int = 5
     mongo_connect_timeout_ms: int = 5000
     mongo_server_selection_timeout_ms: int = 5000
+    # Respaldo (opcional): misma estructura de colecciones; Starcool / Generador / Datos
+    mongo_backup_uri: str = Field(default="", validation_alias="MONGO_BACKUP_URI")
+    mongo_backup_database: str = Field(default="", validation_alias="MONGO_BACKUP_DB")
 
     # Redis
     redis_host: str = "localhost"

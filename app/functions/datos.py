@@ -14,6 +14,7 @@ from app.database.mongodb import (
     collection,
     get_control_collection,
     get_dispositivos_collection,
+    mirror_insert_comando_control,
 )
 from app.functions.guardar_datos import guardar_datos
 
@@ -264,6 +265,7 @@ async def insertar_comando(datos: dict) -> dict:
     if not datos.get("fecha_ejecucion"):
         datos["fecha_ejecucion"] = None
     result = await control_col.insert_one(datos)
+    await mirror_insert_comando_control(_TIPO, datos)
     nuevo = await control_col.find_one({"_id": result.inserted_id}, {"_id": 0})
     return nuevo or {}
 

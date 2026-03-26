@@ -150,16 +150,20 @@ def create_app() -> FastAPI:
         from app.services import redis_service
 
         mongo_ok = await mongodb.health_check()
+        mongo_backup_ok = await mongodb.health_check_backup()
         redis_ok = await redis_service.health_check()
         queues = await redis_service.get_queue_lengths()
 
         is_healthy = mongo_ok  # MongoDB es crítico; Redis es opcional
+        components = {
+            "mongodb": "ok" if mongo_ok else "error",
+            "redis": "ok" if redis_ok else "degraded",
+        }
+        if mongo_backup_ok is not None:
+            components["mongodb_backup"] = "ok" if mongo_backup_ok else "error"
         body = {
             "status": "healthy" if is_healthy else "degraded",
-            "components": {
-                "mongodb": "ok" if mongo_ok else "error",
-                "redis": "ok" if redis_ok else "degraded",
-            },
+            "components": components,
             "queues": queues,
         }
         if not is_healthy:

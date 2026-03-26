@@ -48,7 +48,13 @@ async def _insert_batch(documents: list[dict]) -> int:
     Usa received_at del doc para determinar mes/año.
     """
     from pymongo.errors import BulkWriteError
-    from app.database.mongodb import bd_gene, collection
+    from app.database.mongodb import (
+        backup_db_configured,
+        bd_gene,
+        collection,
+        collection_backup,
+        es_tipo_respaldo,
+    )
 
     # Agrupar por nombre de colección (imei + tipo + mes/año)
     by_collection: dict[str, list] = {}
@@ -75,6 +81,20 @@ async def _insert_batch(documents: list[dict]) -> int:
                 result = await col.insert_many(imei_docs, ordered=False)
                 inserted = len(result.inserted_ids)
                 total_inserted += inserted
+                t0 = imei_docs[0].get("tipo_dispositivo", "TermoKing")
+                if (
+                    es_tipo_respaldo(t0)
+                    and backup_db_configured()
+                ):
+                    try:
+                        col_b = collection_backup(col_name)
+                        await col_b.insert_many(imei_docs, ordered=False)
+                    except Exception as e:
+                        logger.warning(
+                            "Mongo backup: batch insert falló",
+                            coleccion=col_name,
+                            error=str(e),
+                        )
             except BulkWriteError as e:
                 inserted = e.details.get("nInserted", 0)
                 total_inserted += inserted

@@ -33,6 +33,19 @@ logger = get_logger(__name__)
 # Cliente global - se inicializa en connect() durante el lifespan de FastAPI
 _client: Optional[AsyncMongoClient] = None
 _database = None
+_client_backup: Optional[AsyncMongoClient] = None
+_database_backup = None
+
+# Tipos cuyas escrituras se duplican en MongoDB de respaldo (misma estructura de colecciones)
+MIRROR_TIPOS = frozenset({"Starcool", "Generador", "Datos"})
+
+
+def es_tipo_respaldo(tipo: str) -> bool:
+    return tipo in MIRROR_TIPOS
+
+
+def backup_db_configured() -> bool:
+    return _database_backup is not None
 
 
 async def connect() -> None:
@@ -48,8 +61,11 @@ async def connect() -> None:
         _client = AsyncMongoClient(uri)
         _database = _client[db_name]
     """
-    global _client, _database
+    global _client, _database, _client_backup, _database_backup
     settings = get_settings()
+
+    _client_backup = None
+    _database_backup = None
 
     _client = AsyncMongoClient(
         settings.mongo_uri,
@@ -72,10 +88,34 @@ async def connect() -> None:
     # Crear índices en colecciones base
     await _ensure_base_indexes()
 
+    backup_uri = (settings.mongo_backup_uri or "").strip()
+    if backup_uri:
+        backup_db_name = (settings.mongo_backup_database or "").strip() or settings.mongo_database
+        _client_backup = AsyncMongoClient(
+            backup_uri,
+            maxPoolSize=settings.mongo_max_pool_size,
+            minPoolSize=settings.mongo_min_pool_size,
+            connectTimeoutMS=settings.mongo_connect_timeout_ms,
+            serverSelectionTimeoutMS=settings.mongo_server_selection_timeout_ms,
+            w=1,
+            journal=True,
+            retryWrites=True,
+            appName="ztrack-api-backup",
+        )
+        _database_backup = _client_backup[backup_db_name]
+        await _client_backup.admin.command("ping")
+        logger.info("MongoDB respaldo conectado", db=backup_db_name)
+        await _ensure_base_indexes_backup()
+
 
 async def disconnect() -> None:
     """Cierra la conexión limpiamente en el shutdown."""
-    global _client
+    global _client, _client_backup, _database_backup
+    if _client_backup:
+        _client_backup.close()
+        _client_backup = None
+        _database_backup = None
+        logger.info("MongoDB respaldo desconectado")
     if _client:
         _client.close()
         logger.info("MongoDB desconectado")
@@ -84,6 +124,17 @@ async def disconnect() -> None:
 async def health_check() -> bool:
     try:
         await _client.admin.command("ping")
+        return True
+    except Exception:
+        return False
+
+
+async def health_check_backup() -> Optional[bool]:
+    """None si no hay BD de respaldo; True/False según ping."""
+    if _client_backup is None:
+        return None
+    try:
+        await _client_backup.admin.command("ping")
         return True
     except Exception:
         return False
@@ -205,6 +256,74 @@ def get_control_collection(tipo: str = "TermoKing", dt: Optional[datetime] = Non
     return _database.get_collection(name)
 
 
+def collection_backup(name: str):
+    """Colección en la BD de respaldo (mismo nombre que en primaria)."""
+    if _database_backup is None:
+        raise RuntimeError("MongoDB respaldo no configurado")
+    return _database_backup.get_collection(name)
+
+
+def get_dispositivos_collection_backup(tipo: str = "TermoKing", dt: Optional[datetime] = None) -> Any:
+    """Par de get_dispositivos_collection en la BD de respaldo."""
+    if _database_backup is None:
+        raise RuntimeError("MongoDB respaldo no configurado")
+    mes, anio = _mes_anio(dt)
+    if tipo == "Tunel":
+        name = f"TUNEL_dispositivos_{mes}_{anio}"
+    elif tipo == "Datos":
+        name = f"D_dispositivos_{mes}_{anio}"
+    elif tipo == "Starcool":
+        name = f"S_dispositivos_{mes}_{anio}"
+    elif tipo == "Generador":
+        name = f"G_dispositivos_{mes}_{anio}"
+    else:
+        name = f"TK_dispositivos_{mes}_{anio}"
+    return _database_backup.get_collection(name)
+
+
+def get_control_collection_backup(tipo: str = "TermoKing", dt: Optional[datetime] = None) -> Any:
+    """Par de get_control_collection en la BD de respaldo."""
+    if _database_backup is None:
+        raise RuntimeError("MongoDB respaldo no configurado")
+    mes, anio = _mes_anio(dt)
+    if tipo == "Tunel":
+        name = f"TUNEL_control_{mes}_{anio}"
+    elif tipo == "Datos":
+        name = f"D_control_{mes}_{anio}"
+    elif tipo == "Starcool":
+        name = f"S_control_{mes}_{anio}"
+    elif tipo == "Generador":
+        name = f"G_control_{mes}_{anio}"
+    else:
+        name = f"TK_control_{mes}_{anio}"
+    return _database_backup.get_collection(name)
+
+
+async def crear_indices_coleccion_dispositivo_backup(nombre_col: str) -> None:
+    """Índices en colección de tramas del dispositivo (respaldo)."""
+    if _database_backup is None:
+        return
+    from pymongo import IndexModel
+    col = _database_backup.get_collection(nombre_col)
+    await col.create_indexes([
+        IndexModel([("fecha", DESCENDING)], name="idx_fecha"),
+        IndexModel([("estado", ASCENDING), ("fecha", DESCENDING)], name="idx_estado_fecha"),
+        IndexModel([("fecha", ASCENDING)], name="idx_ttl", expireAfterSeconds=7_776_000),
+    ])
+
+
+async def mirror_insert_comando_control(tipo: str, datos: dict) -> None:
+    """Duplica insert de comando en S/D/G_control_* del respaldo (no rompe si falla)."""
+    if not es_tipo_respaldo(tipo) or not backup_db_configured():
+        return
+    try:
+        col = get_control_collection_backup(tipo)
+        doc = {k: v for k, v in datos.items() if k != "_id"}
+        await col.insert_one(doc)
+    except Exception as e:
+        logger.warning("Mongo backup: insert comando control falló", tipo=tipo, error=str(e))
+
+
 # ── ÍNDICES BASE ─────────────────────────────────────────────────────────────
 
 async def _ensure_indexes_dispositivos(col) -> None:
@@ -237,6 +356,22 @@ async def _ensure_base_indexes() -> None:
     await _ensure_indexes_control(get_control_collection("Starcool"))
     await _ensure_indexes_control(get_control_collection("Generador"))
     logger.info("Índices base verificados")
+
+
+async def _ensure_base_indexes_backup() -> None:
+    if _database_backup is None:
+        return
+    await _ensure_indexes_dispositivos(get_dispositivos_collection_backup("TermoKing"))
+    await _ensure_indexes_dispositivos(get_dispositivos_collection_backup("Tunel"))
+    await _ensure_indexes_dispositivos(get_dispositivos_collection_backup("Datos"))
+    await _ensure_indexes_dispositivos(get_dispositivos_collection_backup("Starcool"))
+    await _ensure_indexes_dispositivos(get_dispositivos_collection_backup("Generador"))
+    await _ensure_indexes_control(get_control_collection_backup("TermoKing"))
+    await _ensure_indexes_control(get_control_collection_backup("Tunel"))
+    await _ensure_indexes_control(get_control_collection_backup("Datos"))
+    await _ensure_indexes_control(get_control_collection_backup("Starcool"))
+    await _ensure_indexes_control(get_control_collection_backup("Generador"))
+    logger.info("Índices base verificados (MongoDB respaldo)")
 
 
 async def crear_indices_coleccion_dispositivo(nombre_col: str) -> None:

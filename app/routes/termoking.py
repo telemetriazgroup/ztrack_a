@@ -35,6 +35,7 @@ from app.functions.termoking import (
     buscar_comandos_termoking,
     dispositivos_periodo_termoking,
     reporte_global_termoking,
+    dispositivos_reporte_termoking,
 )
 from app.models.termoking import TermoKingSchema
 from app.models.common import (
@@ -46,6 +47,7 @@ from app.models.common import (
     BusquedaSchema_proceso,
     BuscarComandosSchema,
     DispositivosPeriodoSchema,
+    DispositivosReporteSchema,
 )
 from app.middleware.auth import progressive_auth
 
@@ -143,6 +145,12 @@ async def dispositivos_periodo_ok(datos: DispositivosPeriodoSchema = Body(...)):
 async def dispositivos_reporte_global_ok(datos: DispositivosPeriodoSchema = Body(...)):
     datos = jsonable_encoder(datos)
     return await reporte_global_termoking(datos)
+
+
+@router.post("/dispositivos/reporte/", response_description="Clasificación online / wait / offline por colección mensual.")
+async def dispositivos_reporte_ok(datos: DispositivosReporteSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await dispositivos_reporte_termoking(datos)
 
 
 @router.post("/imei/", response_description="Datos agregados a la base de datos.")

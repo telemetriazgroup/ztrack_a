@@ -7,7 +7,7 @@ recorrido de colecciones mensuales (TK_/TUNEL_*), límites de seguridad en rango
 from __future__ import annotations
 
 from calendar import monthrange
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Optional
 
 from app.core.datetime_utils import server_now
@@ -236,4 +236,119 @@ async def reporte_global_dispositivos_multimes(tipo: str, datos: dict) -> dict:
         "por_estado": estados,
         "referencia_servidor": server_now().isoformat(),
         "dispositivos_muestra": disps[:200],
+    }
+
+
+def _delta_desde_ultimo(ultimo_dato: Any) -> Optional[timedelta]:
+    """Tiempo transcurrido desde ultimo_dato hasta ahora (UTC). None si no hay fecha válida."""
+    if not isinstance(ultimo_dato, datetime):
+        return None
+    now = server_now()
+    if ultimo_dato.tzinfo is None:
+        ud = ultimo_dato.replace(tzinfo=timezone.utc)
+    else:
+        ud = ultimo_dato.astimezone(timezone.utc)
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=timezone.utc)
+    delta = now - ud
+    if delta.total_seconds() < 0:
+        return timedelta(0)
+    return delta
+
+
+def _nombre_coleccion_dispositivos(tipo: str, mes: int, anio: int) -> str:
+    mm = f"{mes:02d}"
+    if tipo == "Tunel":
+        return f"TUNEL_dispositivos_{mm}_{anio}"
+    return f"TK_dispositivos_{mm}_{anio}"
+
+
+async def dispositivos_reporte_clasificado(tipo: str, datos: dict) -> dict:
+    """
+    Clasifica dispositivos de una colección mensual *_dispositivos_MM_YYYY:
+    - online: ultimo_dato dentro de online_hasta_horas
+    - wait: entre online_hasta_horas y wait_hasta_horas
+    - offline: más de wait_hasta_horas sin ultimo_dato o sin fecha válida
+    """
+    try:
+        mes = int(datos["mes"])
+        anio = int(datos["anio"])
+    except (KeyError, TypeError, ValueError):
+        return {
+            "mensaje": "Se requieren mes y anio (enteros)",
+            "coleccion": "",
+            "mes": 0,
+            "anio": 0,
+            "referencia_servidor": server_now().isoformat(),
+            "umbrales": {},
+            "totales": {"online": 0, "wait": 0, "offline": 0, "registros": 0},
+            "online": [],
+            "wait": [],
+            "offline": [],
+        }
+    if not 1 <= mes <= 12:
+        return {
+            "mensaje": "mes debe estar entre 1 y 12",
+            "coleccion": "",
+            "mes": mes,
+            "anio": anio,
+            "referencia_servidor": server_now().isoformat(),
+            "umbrales": {},
+            "totales": {"online": 0, "wait": 0, "offline": 0, "registros": 0},
+            "online": [],
+            "wait": [],
+            "offline": [],
+        }
+
+    online_h = float(datos.get("online_hasta_horas", 1))
+    wait_h = float(datos.get("wait_hasta_horas", 24))
+    if online_h < 0:
+        online_h = 1.0
+    if wait_h < online_h:
+        wait_h = online_h
+
+    col_name = _nombre_coleccion_dispositivos(tipo, mes, anio)
+    dcol = get_dispositivos_collection(tipo, datetime(anio, mes, 1))
+    cursor = dcol.find({"tipo": tipo}, {"_id": 0}).sort("imei", 1)
+    rows = await cursor.to_list(length=10000)
+
+    online_td = timedelta(hours=online_h)
+    wait_td = timedelta(hours=wait_h)
+
+    online_l: list = []
+    wait_l: list = []
+    offline_l: list = []
+
+    for doc in rows:
+        delta = _delta_desde_ultimo(doc.get("ultimo_dato"))
+        if delta is None:
+            offline_l.append(doc)
+        elif delta <= online_td:
+            online_l.append(doc)
+        elif delta <= wait_td:
+            wait_l.append(doc)
+        else:
+            offline_l.append(doc)
+
+    n = len(rows)
+    ref = server_now().isoformat()
+    return {
+        "coleccion": col_name,
+        "mes": mes,
+        "anio": anio,
+        "referencia_servidor": ref,
+        "umbrales": {
+            "online_hasta_horas": online_h,
+            "wait_hasta_horas": wait_h,
+            "offline": f"más de {int(wait_h)} h sin ultimo_dato",
+        },
+        "totales": {
+            "online": len(online_l),
+            "wait": len(wait_l),
+            "offline": len(offline_l),
+            "registros": n,
+        },
+        "online": online_l,
+        "wait": wait_l,
+        "offline": offline_l,
     }

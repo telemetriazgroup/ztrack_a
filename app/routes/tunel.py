@@ -19,6 +19,7 @@ from app.functions.tunel import (
     buscar_comandos_tunel,
     dispositivos_periodo_tunel,
     reporte_global_tunel,
+    dispositivos_reporte_tunel,
 )
 from app.models.tunel import TunelSchema
 from app.models.common import (
@@ -27,6 +28,7 @@ from app.models.common import (
     ComandoSchema,
     BuscarComandosSchema,
     DispositivosPeriodoSchema,
+    DispositivosReporteSchema,
 )
 from app.middleware.auth import progressive_auth
 
@@ -86,6 +88,12 @@ async def dispositivos_periodo_ok(datos: DispositivosPeriodoSchema = Body(...)):
 async def dispositivos_reporte_global_ok(datos: DispositivosPeriodoSchema = Body(...)):
     datos = jsonable_encoder(datos)
     return await reporte_global_tunel(datos)
+
+
+@router.post("/dispositivos/reporte/", response_description="Clasificación online / wait / offline por colección mensual.")
+async def dispositivos_reporte_ok(datos: DispositivosReporteSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await dispositivos_reporte_tunel(datos)
 
 
 @router.post("/imei/", response_description="Buscar por IMEI.")

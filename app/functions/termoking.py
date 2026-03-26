@@ -42,6 +42,7 @@ from app.functions.device_queries import (
     buscar_comandos_control_multimes,
     buscar_imei_multimes,
     dispositivos_periodo_multimes,
+    dispositivos_reporte_clasificado,
     reporte_global_dispositivos_multimes,
 )
 
@@ -100,6 +101,11 @@ async def dispositivos_periodo_termoking(datos: dict) -> dict:
 async def reporte_global_termoking(datos: dict) -> dict:
     """Resumen agregado de dispositivos en el periodo."""
     return await reporte_global_dispositivos_multimes(_TIPO, datos)
+
+
+async def dispositivos_reporte_termoking(datos: dict) -> dict:
+    """Clasificación online / wait / offline en TK_dispositivos_MM_YYYY."""
+    return await dispositivos_reporte_clasificado(_TIPO, datos)
 
 
 async def datos_totales(datos: dict) -> list:

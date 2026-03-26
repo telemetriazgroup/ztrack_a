@@ -109,6 +109,14 @@ class DispositivosPeriodoSchema(BaseModel):
     anio_hasta: Optional[int] = None
 
 
+class DispositivosReporteSchema(BaseModel):
+    """Reporte clasificado (online / wait / offline) para una colección mensual *_dispositivos_MM_YYYY."""
+    mes: int = Field(..., ge=1, le=12)
+    anio: int = Field(..., ge=2000, le=2100)
+    online_hasta_horas: float = Field(default=1.0, ge=0)
+    wait_hasta_horas: float = Field(default=24.0, ge=0)
+
+
 class BusquedaSchema_proceso(BaseModel):
     # Formato esperado: "%d-%m-%Y_%H-%M-%S"
     fecha_inicio: Optional[str] = "0"

@@ -1,20 +1,19 @@
 # ==============================================================================
-# ZTRACK API - Docker Compose
+# ZTRACK API - Docker Compose (Redis incluido en el mismo compose)
 #
-# MongoDB PRINCIPAL: en el servidor (ya instalado), no en contenedor.
-#   En .env apunta MONGO_DETAILS_OK al host donde escucha Mongo, p. ej.:
-#     mongodb://usuario:pass@host.docker.internal:27017/?authSource=admin
-#     mongodb://172.17.0.1:27017   (puente Docker en Linux, si aplica)
-#     mongodb://IP_LAN_DEL_SERVIDOR:27017
+# MongoDB PRINCIPAL en el HOST (instalación local, ej. mongodb://localhost:27017 en el SO):
+#   Desde los contenedores NO uses "localhost" para Mongo: apunta al host con
+#   host.docker.internal (ver extra_hosts abajo). Valor por defecto en compose:
+#     MONGO_DETAILS_OK=mongodb://host.docker.internal:27017
+#   Equivale a tu Mongo escuchando en el puerto 27017 de la máquina.
 #
-# MongoDB RESPALDO (opcional): otra instancia o Atlas; URI completa en .env:
-#     MONGO_BACKUP_URI=mongodb+srv://... o mongodb://host:27017
-#     MONGO_BACKUP_DB=nombre_bd   (vacío = mismo que BD_DETAILS_OK)
+#   Si mongod solo escucha en 127.0.0.1, hay que permitir el bridge Docker, p. ej. en
+#   mongod.conf:  net.bindIp: 127.0.0.1,172.17.0.1  o 0.0.0.0
 #
-# Redis: servicio interno; puerto 6380 en el host (evita conflicto con Redis local).
+# Mongo RESPALDO (opcional, URI externa): si no responde en ~2s al arrancar, se ignora.
 #
-# Requisito: .env con al menos MONGO_DETAILS_OK y BD_DETAILS_OK
-#   cp .env.example .env && nano .env
+# Requisito: archivo .env (puede estar vacío de Mongo si aceptas el default de compose)
+#   cp .env.example .env
 # ==============================================================================
 
 services:
@@ -27,15 +26,18 @@ services:
     ports:
       - "9050:9050"
     extra_hosts:
-      # Permite alcanzar MongoDB en el host Linux/WSL desde el contenedor
       - "host.docker.internal:host-gateway"
     environment:
+      DOCKER_ENV: "1"
       APP_ENV: ${APP_ENV:-development}
       ENABLE_DOCS: ${ENABLE_DOCS:-false}
-      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?Definir MONGO_DETAILS_OK en .env (Mongo en el servidor)}
+      # localhost en .env se reescribe en la app a host.docker.internal; default explícito:
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:-mongodb://host.docker.internal:27017}
       BD_DETAILS_OK: ${BD_DETAILS_OK:-ztrack_db}
       MONGO_BACKUP_URI: ${MONGO_BACKUP_URI:-}
       MONGO_BACKUP_DB: ${MONGO_BACKUP_DB:-}
+      MONGO_BACKUP_CONNECT_TIMEOUT_MS: ${MONGO_BACKUP_CONNECT_TIMEOUT_MS:-2000}
+      MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS: ${MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS:-2000}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:
@@ -57,11 +59,14 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
+      DOCKER_ENV: "1"
       APP_ENV: ${APP_ENV:-production}
-      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?Definir MONGO_DETAILS_OK en .env}
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:-mongodb://host.docker.internal:27017}
       BD_DETAILS_OK: ${BD_DETAILS_OK:-ztrack_db}
       MONGO_BACKUP_URI: ${MONGO_BACKUP_URI:-}
       MONGO_BACKUP_DB: ${MONGO_BACKUP_DB:-}
+      MONGO_BACKUP_CONNECT_TIMEOUT_MS: ${MONGO_BACKUP_CONNECT_TIMEOUT_MS:-2000}
+      MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS: ${MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS:-2000}
       REDIS_HOST: redis
       REDIS_PORT: 6379
     depends_on:

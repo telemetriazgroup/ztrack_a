@@ -29,11 +29,14 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
+      DOCKER_ENV: "1"
       APP_ENV: ${APP_ENV:-production}
-      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?Definir MONGO_DETAILS_OK en .env}
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:-mongodb://host.docker.internal:27017}
       BD_DETAILS_OK: ${BD_DETAILS_OK:-ztrack_db}
       MONGO_BACKUP_URI: ${MONGO_BACKUP_URI:-}
       MONGO_BACKUP_DB: ${MONGO_BACKUP_DB:-}
+      MONGO_BACKUP_CONNECT_TIMEOUT_MS: ${MONGO_BACKUP_CONNECT_TIMEOUT_MS:-2000}
+      MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS: ${MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS:-2000}
       REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
       REDIS_PORT: ${REDIS_PORT:-6379}
     restart: unless-stopped
@@ -52,11 +55,14 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
+      DOCKER_ENV: "1"
       APP_ENV: ${APP_ENV:-production}
-      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:?Definir MONGO_DETAILS_OK en .env}
+      MONGO_DETAILS_OK: ${MONGO_DETAILS_OK:-mongodb://host.docker.internal:27017}
       BD_DETAILS_OK: ${BD_DETAILS_OK:-ztrack_db}
       MONGO_BACKUP_URI: ${MONGO_BACKUP_URI:-}
       MONGO_BACKUP_DB: ${MONGO_BACKUP_DB:-}
+      MONGO_BACKUP_CONNECT_TIMEOUT_MS: ${MONGO_BACKUP_CONNECT_TIMEOUT_MS:-2000}
+      MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS: ${MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS:-2000}
       REDIS_HOST: ${REDIS_HOST:-host.docker.internal}
       REDIS_PORT: ${REDIS_PORT:-6379}
     restart: unless-stopped

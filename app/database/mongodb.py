@@ -19,6 +19,8 @@ COMPATIBILIDAD:
     from app.database.mongodb import collection, guardar_evento_telemetria
   La API de las funciones es idéntica.
 """
+import asyncio
+import os
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
@@ -48,6 +50,21 @@ def backup_db_configured() -> bool:
     return _database_backup is not None
 
 
+def _mongo_uri_host_for_docker(uri: str) -> str:
+    """
+    En Docker, localhost/127.0.0.1 apuntan al contenedor, no al Mongo del host.
+    Si DOCKER_ENV=1, reescribe el host hacia host.docker.internal.
+    """
+    if os.environ.get("DOCKER_ENV", "").lower() not in ("1", "true", "yes"):
+        return uri
+    u = uri
+    u = u.replace("@localhost:", "@host.docker.internal:", 1)
+    u = u.replace("@127.0.0.1:", "@host.docker.internal:", 1)
+    u = u.replace("mongodb://localhost:", "mongodb://host.docker.internal:", 1)
+    u = u.replace("mongodb://127.0.0.1:", "mongodb://host.docker.internal:", 1)
+    return u
+
+
 async def connect() -> None:
     """
     Abre la conexión a MongoDB usando AsyncMongoClient de PyMongo.
@@ -67,8 +84,12 @@ async def connect() -> None:
     _client_backup = None
     _database_backup = None
 
+    primary_uri = _mongo_uri_host_for_docker(settings.mongo_uri)
+    if primary_uri != settings.mongo_uri:
+        logger.info("Mongo URI: localhost/127.0.0.1 reescrito a host.docker.internal (Docker)")
+
     _client = AsyncMongoClient(
-        settings.mongo_uri,
+        primary_uri,
         maxPoolSize=settings.mongo_max_pool_size,
         minPoolSize=settings.mongo_min_pool_size,
         connectTimeoutMS=settings.mongo_connect_timeout_ms,
@@ -91,21 +112,33 @@ async def connect() -> None:
     backup_uri = (settings.mongo_backup_uri or "").strip()
     if backup_uri:
         backup_db_name = (settings.mongo_backup_database or "").strip() or settings.mongo_database
-        _client_backup = AsyncMongoClient(
+        bt_ms = settings.mongo_backup_connect_timeout_ms
+        bss_ms = settings.mongo_backup_server_selection_timeout_ms
+        client_tmp = AsyncMongoClient(
             backup_uri,
-            maxPoolSize=settings.mongo_max_pool_size,
-            minPoolSize=settings.mongo_min_pool_size,
-            connectTimeoutMS=settings.mongo_connect_timeout_ms,
-            serverSelectionTimeoutMS=settings.mongo_server_selection_timeout_ms,
+            maxPoolSize=min(8, settings.mongo_max_pool_size),
+            minPoolSize=0,
+            connectTimeoutMS=bt_ms,
+            serverSelectionTimeoutMS=bss_ms,
             w=1,
             journal=True,
             retryWrites=True,
             appName="ztrack-api-backup",
         )
-        _database_backup = _client_backup[backup_db_name]
-        await _client_backup.admin.command("ping")
-        logger.info("MongoDB respaldo conectado", db=backup_db_name)
-        await _ensure_base_indexes_backup()
+        db_tmp = client_tmp[backup_db_name]
+        ping_timeout_s = max(0.5, min(bt_ms, bss_ms) / 1000.0)
+        try:
+            await asyncio.wait_for(client_tmp.admin.command("ping"), timeout=ping_timeout_s)
+            _client_backup = client_tmp
+            _database_backup = db_tmp
+            logger.info("MongoDB respaldo conectado", db=backup_db_name)
+            await _ensure_base_indexes_backup()
+        except Exception as e:
+            logger.warning(
+                "MongoDB respaldo omitido (sin respuesta a tiempo o error); la app usa solo el principal",
+                error=str(e),
+            )
+            client_tmp.close()
 
 
 async def disconnect() -> None:

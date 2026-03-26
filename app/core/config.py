@@ -6,7 +6,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore"
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False,
+        extra="ignore",
+        populate_by_name=True,
     )
 
     # App
@@ -34,6 +38,13 @@ class Settings(BaseSettings):
     # Respaldo (opcional): misma estructura de colecciones; Starcool / Generador / Datos
     mongo_backup_uri: str = Field(default="", validation_alias="MONGO_BACKUP_URI")
     mongo_backup_database: str = Field(default="", validation_alias="MONGO_BACKUP_DB")
+    # Intentos al respaldo: si no responde en ~2s se descarta (app sigue solo con Mongo principal)
+    mongo_backup_connect_timeout_ms: int = Field(
+        default=2000, validation_alias="MONGO_BACKUP_CONNECT_TIMEOUT_MS"
+    )
+    mongo_backup_server_selection_timeout_ms: int = Field(
+        default=2000, validation_alias="MONGO_BACKUP_SERVER_SELECTION_TIMEOUT_MS"
+    )
 
     # Redis
     redis_host: str = "localhost"
@@ -76,12 +87,6 @@ class Settings(BaseSettings):
         if self.redis_password:
             return f"redis://:{self.redis_password}@{self.redis_host}:{self.redis_port}/{self.redis_db}"
         return f"redis://{self.redis_host}:{self.redis_port}/{self.redis_db}"
-
-    # También soportar nombres nuevos directamente
-    model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", case_sensitive=False, extra="ignore",
-        populate_by_name=True,
-    )
 
 
 @lru_cache()

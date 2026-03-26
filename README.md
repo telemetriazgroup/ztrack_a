@@ -101,8 +101,10 @@ MongoDB
 
 ```bash
 cp .env.example .env
-# Editar .env: MONGO_DETAILS_OK apunta al Mongo instalado en el host (ej. host.docker.internal:27017)
-# Opcional: MONGO_BACKUP_URI y MONGO_BACKUP_DB para duplicar escrituras (Starcool/Generador/Datos)
+# Opcional: en .env pon MONGO_DETAILS_OK=mongodb://host.docker.internal:27017
+# (compose ya trae ese default). Equivale a tu Mongo en mongodb://localhost:27017 del SO.
+# Si no conecta: en mongod.conf permite el bridge Docker, p. ej. net.bindIp: 127.0.0.1,172.17.0.1
+# Respaldo externo: MONGO_BACKUP_URI=... — si no responde en ~2s al arrancar, se omite.
 nano .env
 docker compose up -d
 curl http://localhost:9050/health
@@ -136,6 +138,10 @@ sudo systemctl start ztrack_api ztrack_batch
 | Externos | `docker compose -f docker-compose.external.yml up -d` | Host / Atlas / enlace | Host / externo |
 
 **Redis en puerto 6380**: evita conflicto con otros Redis en 6379. Desde la red Docker, api/batch usan `redis:6379`; desde el host, `localhost:6380`.
+
+**Mongo en `localhost:27017` del servidor y Docker**: el compose define `DOCKER_ENV=1` y la app **reescribe** `localhost` / `127.0.0.1` en la URI hacia **`host.docker.internal`**, así puedes dejar `MONGO_DETAILS_OK=mongodb://localhost:27017` en `.env`. Además, `mongod` debe aceptar conexiones desde la red Docker (no solo `127.0.0.1`), p. ej. `bindIp` que incluya `172.17.0.1` o `0.0.0.0`.
+
+**Respaldo (`MONGO_BACKUP_URI`)**: al iniciar, si no hay respuesta en unos **2 segundos**, el respaldo se descarta y la API trabaja solo con el Mongo principal.
 
 ---
 

@@ -24,7 +24,7 @@ ESTRUCTURA:
   - [funciones de análisis de trama - stubs pendientes de lógica propietaria]
 """
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from bson.objectid import ObjectId
 
@@ -38,6 +38,11 @@ from app.database.mongodb import (
     guardar_evento_telemetria,
 )
 from app.functions.guardar_datos import guardar_datos
+from app.functions.decodificado_queries import (
+    buscar_decodificado_imei_rango,
+    buscar_live_oficial_parcial,
+)
+from app.functions.live_helpers import buscar_live_telemetria_parcial
 from app.functions.device_queries import (
     buscar_comandos_control_multimes,
     buscar_imei_multimes,
@@ -108,6 +113,16 @@ async def dispositivos_reporte_termoking(datos: dict) -> dict:
     return await dispositivos_reporte_clasificado(_TIPO, datos)
 
 
+async def buscar_live_decodificado(datos: dict) -> dict:
+    """Último dato en {IMEI}_OFICIAL_{año}; búsqueda parcial ≥5 caracteres vía Redis."""
+    return await buscar_live_oficial_parcial(datos, "TermoKing")
+
+
+async def buscar_imei_decodificado(datos: dict) -> dict:
+    """Rango de fechas en colecciones OFICIAL por año (12 h por defecto sin fechas)."""
+    return await buscar_decodificado_imei_rango(datos)
+
+
 async def datos_totales(datos: dict) -> list:
     """Lista paginada de registros del dispositivo."""
     imei = datos.get("imei", "")
@@ -146,11 +161,9 @@ async def grafica_total_ok(datos: dict) -> list:
     return await datos_totales_ok(datos)
 
 
-async def buscar_live(datos: dict) -> Optional[dict]:
-    """Retorna el último registro del dispositivo (vista en vivo)."""
-    imei = datos.get("imei", "")
-    col = collection(bd_gene(imei, "TermoKing"))
-    return await col.find_one({}, {"_id": 0}, sort=[("fecha", -1)])
+async def buscar_live(datos: dict) -> Any:
+    """Última trama TK_*; IMEI parcial ≥5 caracteres vía Redis + dispositivos."""
+    return await buscar_live_telemetria_parcial(datos, "TermoKing")
 
 
 async def consultar_trama_ultimo(imei: str) -> Optional[dict]:

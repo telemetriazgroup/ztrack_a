@@ -22,6 +22,9 @@ _pool = None
 QUEUE_KEY = "ztrack:telemetry:queue"
 DLQ_KEY = "ztrack:telemetry:dlq"
 AUTH_CACHE_PREFIX = "ztrack:auth:"
+# Índice de IMEIs vistos por tipo (TermoKing / Tunel) para búsqueda parcial en /live/
+IMEI_SET_PREFIX = "ztrack:imeis:"
+MIN_PARCIAL_LEN_IMEI = 5
 
 
 async def connect() -> None:
@@ -140,3 +143,35 @@ async def invalidate_auth_cache(imei: str) -> None:
         await _client.delete(f"{AUTH_CACHE_PREFIX}{imei}")
     except RedisError:
         pass
+
+
+# ── Índice IMEI (búsqueda parcial ≥ MIN_PARCIAL_LEN_IMEI caracteres) ─────────
+
+async def register_imei_tipo(tipo: str, imei: str) -> None:
+    """Registra IMEI en el SET del tipo (TermoKing / Tunel) para búsquedas live."""
+    if not imei or not tipo or _client is None:
+        return
+    try:
+        await _client.sadd(f"{IMEI_SET_PREFIX}{tipo}", imei.strip())
+    except RedisError:
+        pass
+
+
+async def buscar_imeis_parciales(tipo: str, fragmento: str, limit: int = 40) -> list[str]:
+    """
+    IMEIs conocidos cuyo identificador contiene el fragmento (case-insensitive).
+    Requiere al menos MIN_PARCIAL_LEN_IMEI caracteres en el fragmento.
+    """
+    if not fragmento or len(fragmento.strip()) < MIN_PARCIAL_LEN_IMEI:
+        return []
+    if _client is None:
+        return []
+    frag = fragmento.strip().lower()
+    try:
+        members = await _client.smembers(f"{IMEI_SET_PREFIX}{tipo}")
+    except RedisError:
+        return []
+    if not members:
+        return []
+    coincidencias = sorted(m for m in members if frag in m.lower())
+    return coincidencias[:limit]

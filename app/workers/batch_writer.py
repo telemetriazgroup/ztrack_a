@@ -75,6 +75,13 @@ async def _insert_batch(documents: list[dict]) -> int:
                 result = await col.insert_many(imei_docs, ordered=False)
                 inserted = len(result.inserted_ids)
                 total_inserted += inserted
+                seen = set()
+                for d in imei_docs:
+                    im = d.get("i", "")
+                    tp = d.get("tipo_dispositivo", "TermoKing")
+                    if im and (im, tp) not in seen:
+                        seen.add((im, tp))
+                        await redis_service.register_imei_tipo(tp, im)
             except BulkWriteError as e:
                 inserted = e.details.get("nInserted", 0)
                 total_inserted += inserted

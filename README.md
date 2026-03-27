@@ -185,6 +185,8 @@ Todas las rutas del original siguen funcionando **sin cambios en los clientes**:
 
 **Nuevas (paridad consultas multi-mes / ventana 12 h):** `POST /TermoKing/comando/buscar/`, `POST /TermoKing/dispositivos/periodo/`, `POST /TermoKing/dispositivos/reporte_global/`, `POST /TermoKing/dispositivos/reporte/` (clasificación online/wait/offline por `ultimo_dato`) y las mismas bajo `/Tunel/`. `POST /TermoKing/imei/` y `POST /Tunel/imei/` recorren varios meses si el rango lo cruza; sin fechas usan las últimas 12 h.
 
+**Decodificado (colecciones `{IMEI}_OFICIAL_{año}`):** `POST /TermoKing/decodificado/live/` y `POST /Tunel/decodificado/live/` último documento por `fecha`; `POST …/decodificado/imei/` por rango (12 h por defecto), uniendo colecciones si el rango cruza años. **Live (telemetría y decodificado):** con ≥5 caracteres en `imei` se busca por subcadena (índice en Redis + respaldo en `*_dispositivos_*`); varias coincidencias devuelven `detalle` y `ultimo` más reciente.
+
 ---
 
 ## Ejecutar Tests

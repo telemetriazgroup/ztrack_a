@@ -15,6 +15,8 @@ from app.functions.tunel import (
     datos_totales_ok,
     grafica_total_ok,
     buscar_live,
+    buscar_live_decodificado,
+    buscar_imei_decodificado,
     procesar_data_termoking,
     buscar_comandos_tunel,
     dispositivos_periodo_tunel,
@@ -64,6 +66,24 @@ async def pre_termoking():
 async def buscar_live_ok(datos: BusquedaSchema = Body(...)):
     datos = jsonable_encoder(datos)
     return await buscar_live(datos)
+
+
+@router.post(
+    "/decodificado/live/",
+    response_description="Último dato decodificado {IMEI}_OFICIAL_{año} (parcial ≥5 chars).",
+)
+async def buscar_live_decodificado_ok(datos: BusquedaSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_live_decodificado(datos)
+
+
+@router.post(
+    "/decodificado/imei/",
+    response_description="Decodificados por IMEI y fechas (12 h por defecto; multi-año).",
+)
+async def buscar_imei_decodificado_ok(datos: BusquedaSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_imei_decodificado(datos)
 
 
 @router.post("/comando/", response_description="Insertar comando.")

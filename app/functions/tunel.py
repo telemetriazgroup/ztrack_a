@@ -5,12 +5,16 @@ Funciones de negocio para el módulo Túnel.
 Mismo patrón que termoking.py pero para dispositivos de túnel de frío.
 """
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.datetime_utils import server_now
 from app.core.logging import get_logger
 from app.database.mongodb import bd_gene, collection, get_control_collection
 from app.functions.guardar_datos import guardar_datos
+from app.functions.decodificado_queries import (
+    buscar_decodificado_imei_rango,
+    buscar_live_oficial_parcial,
+)
 from app.functions.device_queries import (
     buscar_comandos_control_multimes,
     buscar_imei_multimes,
@@ -18,6 +22,7 @@ from app.functions.device_queries import (
     dispositivos_reporte_clasificado,
     reporte_global_dispositivos_multimes,
 )
+from app.functions.live_helpers import buscar_live_telemetria_parcial
 
 logger = get_logger(__name__)
 
@@ -59,6 +64,14 @@ async def dispositivos_reporte_tunel(datos: dict) -> dict:
     return await dispositivos_reporte_clasificado(_TIPO, datos)
 
 
+async def buscar_live_decodificado(datos: dict) -> dict:
+    return await buscar_live_oficial_parcial(datos, "Tunel")
+
+
+async def buscar_imei_decodificado(datos: dict) -> dict:
+    return await buscar_decodificado_imei_rango(datos)
+
+
 async def datos_totales(datos: dict) -> list:
     imei = datos.get("imei", "")
     col = collection(bd_gene(imei, "Tunel"))
@@ -81,10 +94,8 @@ async def grafica_total_ok(datos: dict) -> list:
     return await datos_totales_ok(datos)
 
 
-async def buscar_live(datos: dict) -> Optional[dict]:
-    imei = datos.get("imei", "")
-    col = collection(bd_gene(imei, "Tunel"))
-    return await col.find_one({}, {"_id": 0}, sort=[("fecha", -1)])
+async def buscar_live(datos: dict) -> Any:
+    return await buscar_live_telemetria_parcial(datos, "Tunel")
 
 
 async def Procesar_Trama() -> dict:

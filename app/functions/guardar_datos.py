@@ -66,6 +66,8 @@ async def guardar_datos(
     # Inyectar tipo para que batch_writer use la colección correcta (TK_/TUNEL_)
     ztrack_data["tipo_dispositivo"] = tipo_dispositivo
 
+    await redis_service.register_imei_tipo(tipo_dispositivo, imei)
+
     # ── 1. Encolar trama en Redis (no bloqueante, < 1ms) ────────────────────
     # Equivale al: await data_collection.insert_one(ztrack_data) del original
     # pero sin bloquear el response al dispositivo.

@@ -36,6 +36,8 @@ from app.functions.termoking import (
     dispositivos_periodo_termoking,
     reporte_global_termoking,
     dispositivos_reporte_termoking,
+    buscar_live_decodificado,
+    buscar_imei_decodificado,
 )
 from app.models.termoking import TermoKingSchema
 from app.models.common import (
@@ -121,6 +123,24 @@ async def pre_termoking():
 async def buscar_live_ok(datos: BusquedaSchema = Body(...)):
     datos = jsonable_encoder(datos)
     return await buscar_live(datos)
+
+
+@router.post(
+    "/decodificado/live/",
+    response_description="Último dato decodificado en {IMEI}_OFICIAL_{año}.",
+)
+async def buscar_live_decodificado_ok(datos: BusquedaSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_live_decodificado(datos)
+
+
+@router.post(
+    "/decodificado/imei/",
+    response_description="Decodificados por IMEI y fechas (12 h por defecto; multi-año).",
+)
+async def buscar_imei_decodificado_ok(datos: BusquedaSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_imei_decodificado(datos)
 
 
 @router.post("/comando/", response_description="Datos agregados a la base de datos.")

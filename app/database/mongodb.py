@@ -146,6 +146,15 @@ def bd_gene(imei: str, tipo: Optional[str] = None, dt: Optional[datetime] = None
     return f"trama_{safe}"
 
 
+def bd_gene_oficial(imei: str, anio: int) -> str:
+    """
+    Colección de datos decodificados / procesados por IMEI y año civil.
+    Formato: {IMEI_safe}_OFICIAL_{YYYY} (ej: ZGRU1234567_OFICIAL_2026).
+    """
+    safe = str(imei).strip().translate(_MONGO_SAFE_REPLACE) or "unknown"
+    return f"{safe}_OFICIAL_{anio}"
+
+
 # ── COLECCIONES BASE ─────────────────────────────────────────────────────────────
 
 def get_log_general_collection():

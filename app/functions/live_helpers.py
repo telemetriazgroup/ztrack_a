@@ -72,6 +72,21 @@ async def _imeis_fallback_mongo(tipo: str, fragmento: str, limit: int) -> list[s
     return out[:limit]
 
 
+async def imeis_fallback_mongo_union(fragmento: str, limit: int) -> list[str]:
+    """Unión de coincidencias en TK_* y TUNEL_* dispositivos (mismo IMEI puede estar en un solo tipo)."""
+    a = await _imeis_fallback_mongo("TermoKing", fragmento, limit)
+    b = await _imeis_fallback_mongo("Tunel", fragmento, limit)
+    seen: set[str] = set()
+    out: list[str] = []
+    for im in a + b:
+        if im not in seen:
+            seen.add(im)
+            out.append(im)
+        if len(out) >= limit:
+            break
+    return out
+
+
 async def buscar_live_telemetria_parcial(datos: dict, tipo: str) -> Any:
     """
     TK_* / TUNEL_* última trama.

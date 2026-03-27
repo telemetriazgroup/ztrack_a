@@ -70,7 +70,7 @@ async def buscar_live_ok(datos: BusquedaSchema = Body(...)):
 
 @router.post(
     "/decodificado/live/",
-    response_description="Último dato decodificado {IMEI}_OFICIAL_{año} (parcial ≥5 chars).",
+    response_description="Último dato decodificado {IMEI}_TUNEL_OFICIAL_{año} (parcial ≥5 chars).",
 )
 async def buscar_live_decodificado_ok(datos: BusquedaSchema = Body(...)):
     datos = jsonable_encoder(datos)
@@ -79,7 +79,7 @@ async def buscar_live_decodificado_ok(datos: BusquedaSchema = Body(...)):
 
 @router.post(
     "/decodificado/imei/",
-    response_description="Decodificados por IMEI y fechas (12 h por defecto; multi-año).",
+    response_description="Decodificados en {IMEI}_TUNEL_OFICIAL_{año} por IMEI y fechas (12 h por defecto; multi-año).",
 )
 async def buscar_imei_decodificado_ok(datos: BusquedaSchema = Body(...)):
     datos = jsonable_encoder(datos)

@@ -148,11 +148,20 @@ def bd_gene(imei: str, tipo: Optional[str] = None, dt: Optional[datetime] = None
 
 def bd_gene_oficial(imei: str, anio: int) -> str:
     """
-    Colección de datos decodificados / procesados por IMEI y año civil.
+    Colección de datos decodificados / procesados por IMEI y año civil (TermoKing).
     Formato: {IMEI_safe}_OFICIAL_{YYYY} (ej: ZGRU1234567_OFICIAL_2026).
     """
     safe = str(imei).strip().translate(_MONGO_SAFE_REPLACE) or "unknown"
     return f"{safe}_OFICIAL_{anio}"
+
+
+def bd_gene_oficial_tunel(imei: str, anio: int) -> str:
+    """
+    Colección decodificados Túnel por IMEI y año civil.
+    Formato: {IMEI_safe}_TUNEL_OFICIAL_{YYYY}.
+    """
+    safe = str(imei).strip().translate(_MONGO_SAFE_REPLACE) or "unknown"
+    return f"{safe}_TUNEL_OFICIAL_{anio}"
 
 
 # ── COLECCIONES BASE ─────────────────────────────────────────────────────────────

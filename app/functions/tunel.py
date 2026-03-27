@@ -69,7 +69,7 @@ async def buscar_live_decodificado(datos: dict) -> dict:
 
 
 async def buscar_imei_decodificado(datos: dict) -> dict:
-    return await buscar_decodificado_imei_rango(datos)
+    return await buscar_decodificado_imei_rango(datos, "Tunel")
 
 
 async def datos_totales(datos: dict) -> list:

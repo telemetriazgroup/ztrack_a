@@ -175,3 +175,26 @@ async def buscar_imeis_parciales(tipo: str, fragmento: str, limit: int = 40) -> 
         return []
     coincidencias = sorted(m for m in members if frag in m.lower())
     return coincidencias[:limit]
+
+
+async def buscar_imeis_parciales_union(fragmento: str, limit: int = 40) -> list[str]:
+    """
+    Unión de IMEIs TermoKing + Tunel (búsqueda parcial para rutas TermoKing decodificado).
+    """
+    if not fragmento or len(fragmento.strip()) < MIN_PARCIAL_LEN_IMEI:
+        return []
+    if _client is None:
+        return []
+    frag = fragmento.strip().lower()
+    merged: set[str] = set()
+    try:
+        for tipo in ("TermoKing", "Tunel"):
+            m = await _client.smembers(f"{IMEI_SET_PREFIX}{tipo}")
+            if m:
+                merged.update(m)
+    except RedisError:
+        return []
+    if not merged:
+        return []
+    coincidencias = sorted(x for x in merged if frag in x.lower())
+    return coincidencias[:limit]

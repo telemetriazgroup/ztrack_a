@@ -50,10 +50,10 @@ async def add_data(
     comando = await Guardar_Datos(doc, secured=device.secured)
     return {
         "status": "ok",
-        "imei": datos.i,
-        "secured": device.secured,
+        #"imei": datos.i,
+        #"secured": device.secured,
         "comando": comando,
-        "received_at": received_at.isoformat(),
+        #"received_at": received_at.isoformat(),
     }
 
 

@@ -84,10 +84,10 @@ async def add_data(
 
     return {
         "status": "ok",
-        "imei": datos.i,
-        "secured": device.secured,
+        #"imei": datos.i,
+        #"secured": device.secured,
         "comando": comando,
-        "received_at": received_at.isoformat(),
+        #"received_at": received_at.isoformat(),
     }
 
 

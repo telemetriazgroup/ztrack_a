@@ -53,9 +53,9 @@ async def handle_telemetry_post(
             raise
 
     return {
-        "status": "ok",
-        "imei": datos.i,
-        "secured": device.secured,
+        #"status": "ok",
+        #"imei": datos.i,
+        #"secured": device.secured,
         "comando": comando,
-        "received_at": received_at.isoformat(),
+        #"received_at": received_at.isoformat(),
     }

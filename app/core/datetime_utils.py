@@ -23,3 +23,38 @@ def server_now() -> datetime:
         tz = ZoneInfo("America/Lima")
     now_local = datetime.now(tz)
     return now_local.replace(tzinfo=timezone.utc)
+
+
+def timezone_label() -> str:
+    """Etiqueta para UI (ej. America/Lima → GMT-5)."""
+    from app.core.config import get_settings
+    name = get_settings().app_timezone
+    if name == "America/Lima":
+        return "GMT-5 (America/Lima)"
+    return name
+
+
+def parse_stored_datetime(value) -> datetime | None:
+    """Parsea ISO almacenado (hora local con sufijo +00:00)."""
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+
+
+def format_for_display(value, *, with_timezone: bool = True) -> str | None:
+    """
+    Formatea fecha para el panel: hora de reloj ya guardada en BD (no convertir UTC→Lima).
+    Los documentos usan hora local APP_TIMEZONE con etiqueta +00:00.
+    """
+    dt = parse_stored_datetime(value)
+    if not dt:
+        return str(value) if value is not None else None
+    base = dt.strftime("%d/%m/%Y %H:%M:%S")
+    if with_timezone:
+        return f"{base} {timezone_label()}"
+    return base

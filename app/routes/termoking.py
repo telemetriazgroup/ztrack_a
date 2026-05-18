@@ -10,7 +10,7 @@ CAMBIOS:
   3. Todas las demás rutas se mantienen idénticas al original
   4. Se agrega el campo 'comando' y 'secured' en la respuesta del POST
 """
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Depends
 from fastapi.encoders import jsonable_encoder
 
 from app.functions.termoking import (
@@ -51,44 +51,22 @@ from app.models.common import (
     DispositivosPeriodoSchema,
     DispositivosReporteSchema,
 )
-from app.middleware.auth import progressive_auth
+from app.middleware.auth import DeviceAuthResult, make_progressive_auth
+from app.routes.telemetry_ingest import handle_telemetry_post
 
 router = APIRouter()
+_termoking_auth = make_progressive_auth(TermoKingSchema, "TermoKing")
 
 
 # ── RECEPCIÓN PRINCIPAL DE TELEMETRÍA ────────────────────────────────────────
 
 @router.post("/", response_description="Datos agregados a la base de datos.")
 async def add_data(
-    request: Request,
     datos: TermoKingSchema = Body(...),
-    device=Depends(progressive_auth),
+    device: DeviceAuthResult = Depends(_termoking_auth),
 ):
-    """
-    Endpoint principal de recepción de telemetría TermoKing.
-
-    CAMBIO vs. original: Usa progressive_auth (acepta dispositivos legacy
-    sin API Key Y dispositivos nuevos con API Key).
-
-    La respuesta incluye el campo 'comando' con el comando de control
-    pendiente para el dispositivo (equivalente al return del Guardar_Datos original).
-    """
-    datos_dict = jsonable_encoder(datos)
-
-    # Agregar received_at y secured al documento
-    from app.core.datetime_utils import server_now
-    received_at = server_now()
-    doc = datos.to_mongo_document(received_at=received_at, secured=device.secured)
-
-    comando = await Guardar_Datos(doc, secured=device.secured)
-
-    return {
-        "status": "ok",
-        #"imei": datos.i,
-        #"secured": device.secured,
-        "comando": comando,
-        #"received_at": received_at.isoformat(),
-    }
+    """Recepción de telemetría TermoKing (ingesta compartida + métricas Prometheus)."""
+    return await handle_telemetry_post(datos, device, "TermoKing")
 
 
 # ── CONSULTAS ────────────────────────────────────────────────────────────────

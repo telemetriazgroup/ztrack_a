@@ -35,6 +35,14 @@ def _to_datetime(v) -> datetime:
         return server_now()
 
 
+def _prepare_doc_for_insert(d: dict, now: datetime) -> None:
+    """Normaliza campos antes de insert_many (misma lógica que fallback directo)."""
+    d.setdefault("estado", 1)
+    raw = d.get("received_at") or d.get("fecha") or now
+    d["fecha"] = _to_datetime(raw) if not isinstance(raw, datetime) else raw
+    d.setdefault("received_at", d["fecha"])
+
+
 def _handle_signal(signum, frame):
     global _shutdown
     logger.info("Shutdown señalado — esperando batch actual")
@@ -68,10 +76,7 @@ async def _insert_batch(documents: list[dict]) -> int:
                 # Asegurar fecha, estado; normalizar datetime (Redis/JSON devuelve strings)
                 now = server_now()
                 for d in imei_docs:
-                    d.setdefault("estado", 1)
-                    raw = d.get("received_at") or d.get("fecha") or now
-                    d["fecha"] = _to_datetime(raw) if not isinstance(raw, datetime) else raw
-                    d.setdefault("received_at", d["fecha"])
+                    _prepare_doc_for_insert(d, now)
                 result = await col.insert_many(imei_docs, ordered=False)
                 inserted = len(result.inserted_ids)
                 total_inserted += inserted

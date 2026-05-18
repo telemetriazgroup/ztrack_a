@@ -21,11 +21,13 @@ USO DIRECTO (desarrollo):
 """
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
@@ -128,13 +130,37 @@ def create_app() -> FastAPI:
     # ── Routers — mismos prefijos y tags del original ────────────────────────
     from app.routes.termoking import router as TermoKingRouter
     from app.routes.tunel import router as TunelRouter
+    from app.routes.dashboard_api import router as DashboardRouter
+    from app.routes.cerro_prieto_api import router as CerroPrietoRouter
 
     app.include_router(TermoKingRouter, tags=["TermoKing"], prefix="/TermoKing")
     app.include_router(TunelRouter, tags=["Tunel"], prefix="/Tunel")
+    app.include_router(DashboardRouter)
+    app.include_router(CerroPrietoRouter)
 
-    # ── Root — idéntico al original ──────────────────────────────────────────
+    # ── Panel web de flota (estático) ────────────────────────────────────────
+    dashboard_dir = Path(__file__).resolve().parent / "static" / "dashboard"
+    if dashboard_dir.is_dir():
+        app.mount(
+            "/dashboard",
+            StaticFiles(directory=str(dashboard_dir), html=True),
+            name="dashboard",
+        )
+
+    cerro_prieto_dir = Path(__file__).resolve().parent / "static" / "cerro-prieto"
+    if cerro_prieto_dir.is_dir():
+        app.mount(
+            "/cerro-prieto",
+            StaticFiles(directory=str(cerro_prieto_dir), html=True),
+            name="cerro_prieto",
+        )
+
+    # ── Root — redirige al panel o mensaje API ─────────────────────────────
     @app.get("/", tags=["Root"])
     async def read_root():
+        if dashboard_dir.is_dir():
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/dashboard/", status_code=302)
         return {"message": "Welcome to app ztrack by 2.0!"}
 
     # ── Health check (nuevo) ─────────────────────────────────────────────────
@@ -166,6 +192,16 @@ def create_app() -> FastAPI:
 
         @app.get(settings.metrics_path, include_in_schema=False)
         async def metrics():
+            from app.core.metrics import REDIS_QUEUE_LENGTH
+            from app.services import redis_service
+
+            try:
+                queues = await redis_service.get_queue_lengths()
+                REDIS_QUEUE_LENGTH.labels(queue="main").set(max(queues.get("main", 0), 0))
+                REDIS_QUEUE_LENGTH.labels(queue="dlq").set(max(queues.get("dlq", 0), 0))
+            except Exception:
+                pass
+
             return PlainTextResponse(
                 generate_latest().decode("utf-8"),
                 media_type=CONTENT_TYPE_LATEST,

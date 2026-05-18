@@ -1,0 +1,135 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "panels": [
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+      "id": 1,
+      "title": "Tramas recibidas por módulo",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(telemetry_received_total[1m])) by (modulo)",
+          "legendFormat": "{{modulo}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+      "id": 2,
+      "title": "Latencia P99 ingesta POST",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(telemetry_processing_duration_seconds_bucket[5m])) by (le, modulo))",
+          "legendFormat": "{{modulo}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 8 },
+      "id": 3,
+      "title": "Cola Redis (main)",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "redis_queue_length{queue=\"main\"}", "legendFormat": "main", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 8 },
+      "id": 4,
+      "title": "DLQ Redis",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "redis_queue_length{queue=\"dlq\"}", "legendFormat": "dlq", "refId": "A" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 8 },
+      "id": 5,
+      "title": "Persistencia (redis vs fallback Mongo)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(telemetry_persist_total[5m])) by (path)",
+          "legendFormat": "{{path}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 16 },
+      "id": 6,
+      "title": "Comandos despachados",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(control_commands_dispatched_total[5m])) by (modulo)",
+          "legendFormat": "{{modulo}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 16 },
+      "id": 7,
+      "title": "Dispositivos legacy vs secured",
+      "type": "timeseries",
+      "targets": [
+        { "expr": "rate(devices_legacy_total[5m])", "legendFormat": "legacy", "refId": "A" },
+        { "expr": "rate(devices_secured_total[5m])", "legendFormat": "secured", "refId": "B" }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+      "id": 8,
+      "title": "Errores Redis",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(redis_errors_total[5m])) by (operation)",
+          "legendFormat": "{{operation}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+      "id": 9,
+      "title": "Batch writer — documentos insertados",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.5, rate(mongo_batch_size_documents_bucket[5m]))",
+          "legendFormat": "p50 batch size",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["ztrack", "telemetry"],
+  "templating": { "list": [] },
+  "time": { "from": "now-1h", "to": "now" },
+  "timezone": "browser",
+  "title": "ZTRACK — Telemetría TermoKing / Túnel",
+  "uid": "ztrack-overview",
+  "version": 1
+}

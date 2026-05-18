@@ -2,11 +2,10 @@
 app/routes/tunel.py
 Rutas del módulo Túnel. Adaptación del original server/routes/tunel.py.
 """
-from fastapi import APIRouter, Body, Depends, Request
+from fastapi import APIRouter, Body, Depends
 from fastapi.encoders import jsonable_encoder
 
 from app.functions.tunel import (
-    Guardar_Datos,
     Procesar_Trama,
     buscar_imei,
     insertar_comando,
@@ -32,29 +31,20 @@ from app.models.common import (
     DispositivosPeriodoSchema,
     DispositivosReporteSchema,
 )
-from app.middleware.auth import progressive_auth
+from app.middleware.auth import DeviceAuthResult, make_progressive_auth
+from app.routes.telemetry_ingest import handle_telemetry_post
 
 router = APIRouter()
+_tunel_auth = make_progressive_auth(TunelSchema, "Tunel")
 
 
 @router.post("/", response_description="Datos agregados a la base de datos.")
 async def add_data(
-    request: Request,
     datos: TunelSchema = Body(...),
-    device=Depends(progressive_auth),
+    device: DeviceAuthResult = Depends(_tunel_auth),
 ):
-    """Recepción de telemetría Túnel con Seguridad Progresiva."""
-    from app.core.datetime_utils import server_now
-    received_at = server_now()
-    doc = datos.to_mongo_document(received_at=received_at, secured=device.secured)
-    comando = await Guardar_Datos(doc, secured=device.secured)
-    return {
-        "status": "ok",
-        #"imei": datos.i,
-        #"secured": device.secured,
-        "comando": comando,
-        #"received_at": received_at.isoformat(),
-    }
+    """Recepción de telemetría Túnel (ingesta compartida + métricas Prometheus)."""
+    return await handle_telemetry_post(datos, device, "Tunel")
 
 
 @router.get("/PreTermoking/", response_description="Pre-procesamiento.")

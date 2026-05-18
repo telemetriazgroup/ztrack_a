@@ -189,6 +189,39 @@ Todas las rutas del original siguen funcionando **sin cambios en los clientes**:
 
 ---
 
+## Panel web de flota
+
+Interfaz para ver **último dato**, **estado** (online / en espera / offline) y **última trama** por IMEI (`i`):
+
+```text
+http://localhost:9050/dashboard/
+```
+
+La raíz `/` redirige al panel. Fechas mostradas en **GMT-5** (America/Lima). Al seleccionar un dispositivo se listan los últimos comandos ejecutados.
+
+API: `GET /api/dashboard/flota`, `GET /api/dashboard/dispositivo/{imei}/comandos`, `GET /api/dashboard/dispositivo/{imei}/ultima`, `POST /api/dashboard/decodificar` (hex → datos legibles).
+
+En el panel, pestaña **Decodificado** en la última trama: interpreta canales `d02`/`d03` (protocolo 1B02), CSV (`d07`), ASCII (`d01`) y muestra datos OFICIAL si existen.
+
+---
+
+## Monitoreo (Prometheus + Grafana)
+
+Con Docker Compose se levantan **Prometheus** (puerto 9090) y **Grafana** (puerto **9200**):
+
+```bash
+docker compose up -d
+# Grafana: http://localhost:9200  (usuario/contraseña: admin / ztrack por defecto)
+# Prometheus: http://localhost:9090
+# Métricas API: http://localhost:9050/metrics
+```
+
+Dashboard provisionado: **ZTRACK — Telemetría TermoKing / Túnel** (tramas/min, latencia P99, cola Redis, fallback Mongo, comandos, legacy vs secured).
+
+Variables opcionales en `.env`: `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`.
+
+---
+
 ## Ejecutar Tests
 
 ```bash

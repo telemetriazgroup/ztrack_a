@@ -1,0 +1,15 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: ztrack_api
+    metrics_path: /metrics
+    static_configs:
+      - targets: ["api:9050"]
+        labels:
+          service: ztrack_api
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["localhost:9090"]

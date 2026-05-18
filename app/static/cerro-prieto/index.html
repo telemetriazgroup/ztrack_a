@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1419" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>Cerro Prieto — Control</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/cerro-prieto/css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <span class="brand-mark">CP</span>
+        <div>
+          <h1>Cerro Prieto</h1>
+          <p class="subtitle">IMEI <code id="headerImei">—</code></p>
+        </div>
+      </div>
+      <button type="button" class="btn btn-primary btn-icon" id="btnRefresh" title="Actualizar" aria-label="Actualizar">↻</button>
+    </header>
+
+    <p class="updated-line" id="updatedLine">Cargando último dato…</p>
+
+    <!-- 1. Enviar comando -->
+    <section class="card collapsible-panel comandos-panel" id="comandosPanel">
+      <button type="button" class="btn-panel-toggle" id="btnToggleComandos" aria-expanded="false" aria-controls="comandosPanelBody">
+        <span class="toggle-icon" aria-hidden="true">▸</span>
+        <span class="toggle-label">Enviar comando al equipo</span>
+      </button>
+      <div class="panel-body hidden" id="comandosPanelBody">
+        <p class="hint">Busque y elija una acción. Se mostrarán los sensores d02 y deberá confirmar.</p>
+        <div class="search-field-wrap">
+          <span class="search-icon" aria-hidden="true">⌕</span>
+          <input
+            type="search"
+            id="searchComando"
+            class="search-input"
+            placeholder="Buscar acción o comando…"
+            autocomplete="off"
+            enterkeyhint="search"
+          />
+          <button type="button" class="btn-clear-search hidden" id="btnClearSearch" aria-label="Limpiar búsqueda">×</button>
+        </div>
+        <p class="search-hint" id="searchResultCount"></p>
+        <div class="acciones-list" id="accionesList"></div>
+      </div>
+    </section>
+
+    <!-- 2. Sensores d02 -->
+    <section class="card card-highlight" aria-labelledby="d02Title">
+      <h2 id="d02Title">Sensores <code>d02</code></h2>
+
+      <p class="objetivos-resumen" id="objetivosResumen" aria-live="polite"></p>
+      <ul class="leyenda-colores leyenda-inline" aria-label="Leyenda de colores">
+        <li><span class="leyenda-dot leyenda-ok"></span> ±1 %</li>
+        <li><span class="leyenda-dot leyenda-warn"></span> ±2 %</li>
+        <li><span class="leyenda-dot leyenda-danger"></span> &gt; ±2 %</li>
+      </ul>
+
+      <section class="collapsible-panel objetivos-panel-wrap" id="objetivosPanel">
+        <button type="button" class="btn-panel-toggle btn-panel-secondary" id="btnToggleObjetivos" aria-expanded="false" aria-controls="objetivosPanelBody">
+          <span class="toggle-icon" aria-hidden="true">▸</span>
+          <span class="toggle-label">Modificar objetivos CO₂ / O₂</span>
+        </button>
+        <div class="panel-body hidden" id="objetivosPanelBody">
+          <div class="objetivos-grid">
+            <div class="objetivos-col">
+              <span class="obj-col-title">CO₂ objetivo (%)</span>
+              <label class="obj-label">Zona 1 <input type="number" id="objCo2Z1" min="0" max="100" step="0.1" inputmode="decimal" /></label>
+              <label class="obj-label">Zona 2 <input type="number" id="objCo2Z2" min="0" max="100" step="0.1" inputmode="decimal" /></label>
+              <label class="obj-label">Zona 3 <input type="number" id="objCo2Z3" min="0" max="100" step="0.1" inputmode="decimal" /></label>
+            </div>
+            <div class="objetivos-col">
+              <span class="obj-col-title">O₂ objetivo (%)</span>
+              <label class="obj-label">Zona 1 <input type="number" id="objO2Z1" min="0" max="100" step="0.1" inputmode="decimal" /></label>
+              <label class="obj-label">Zona 2 <input type="number" id="objO2Z2" min="0" max="100" step="0.1" inputmode="decimal" /></label>
+              <label class="obj-label">Zona 3 <input type="number" id="objO2Z3" min="0" max="100" step="0.1" inputmode="decimal" /></label>
+            </div>
+          </div>
+          <div class="objetivos-actions">
+            <button type="button" class="btn btn-ghost btn-touch" id="btnRestaurarObjetivos">Predeterminados</button>
+            <button type="button" class="btn btn-primary btn-touch" id="btnAplicarObjetivos">Aplicar al equipo</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="sensor-zonas" id="d02Zonas">
+        <p class="muted">Cargando sensores…</p>
+      </div>
+      <h3 class="subheading">Compresores</h3>
+      <div class="compresores-grid" id="d02Compresores">
+        <p class="muted">Cargando…</p>
+      </div>
+      <h3 class="subheading">Humedad</h3>
+      <div class="sensor-grid sensor-grid-humedad hidden" id="d02Grid" aria-label="Humedad por zona"></div>
+      <div class="flags-wrap hidden" id="d02FlagsWrap">
+        <h3 class="subheading">Estados adicionales</h3>
+        <ul class="flags-list" id="d02Flags"></ul>
+      </div>
+    </section>
+
+    <!-- 3. Canal rs -->
+    <section class="card" aria-labelledby="rsTitle">
+      <h2 id="rsTitle">Canal <code>rs</code></h2>
+      <p class="hint">RIPENER · REEFER_QUEST · INYECTOR</p>
+      <div id="rsBlocks" class="rs-blocks">
+        <p class="muted">Cargando canal rs…</p>
+      </div>
+    </section>
+
+    <!-- 4. Datos total (JSON) -->
+    <section class="card" aria-labelledby="datosTotalTitle">
+      <h2 id="datosTotalTitle">Datos total</h2>
+      <p class="hint">Última trama recibida del equipo</p>
+      <pre class="datos-total-json" id="datosTotalJson">Cargando…</pre>
+    </section>
+
+    <!-- 5. Verificación -->
+    <section class="card" id="verificacionSection" aria-live="polite">
+      <h2>Verificación de comandos</h2>
+      <p class="hint">1 = pendiente · 0 = ejecutado</p>
+      <div class="status-grid" id="verificacionGrid">
+        <p class="muted">Cargando…</p>
+      </div>
+    </section>
+
+    <!-- 6. Historial -->
+    <section class="card" id="historialSection">
+      <h2>Historial de comandos</h2>
+      <div class="historial-wrap" id="historialWrap">
+        <ul class="historial" id="historialList">
+          <li class="muted">Cargando…</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <dialog class="modal" id="confirmModal">
+    <form method="dialog" class="modal-inner" id="confirmForm">
+      <h2 id="modalTitle">¿Está seguro?</h2>
+      <p class="modal-accion" id="modalAccion"></p>
+      <dl class="modal-dl">
+        <dt>Comando a enviar</dt>
+        <dd><code id="modalComando"></code></dd>
+        <dt>Último dato recibido</dt>
+        <dd id="modalUltimoDato">—</dd>
+      </dl>
+      <div class="modal-context" id="modalContext">
+        <p class="modal-loading muted" id="modalContextLoading">Cargando d02…</p>
+        <div class="modal-context-section hidden" id="modalD02Section">
+          <p class="hint modal-confirm-hint">Revise el valor <code>d02</code> antes de enviar.</p>
+          <pre class="modal-d02-plain" id="modalD02"></pre>
+        </div>
+      </div>
+      <div class="modal-actions modal-actions-stack">
+        <button type="submit" class="btn btn-primary btn-touch" id="modalAccept">Sí, enviar comando</button>
+        <button type="button" class="btn btn-ghost btn-touch" id="modalCancel">Cancelar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="/cerro-prieto/js/app.js" type="module"></script>
+</body>
+</html>

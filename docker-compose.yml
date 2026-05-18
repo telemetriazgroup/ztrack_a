@@ -80,5 +80,42 @@ services:
       start_period: 5s
     restart: unless-stopped
 
+  # ----------------------------------------------------------------------------
+  # Prometheus (scrape /metrics de la API)
+  # ----------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.52.0
+    container_name: ztrack_prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ----------------------------------------------------------------------------
+  # Grafana — UI en http://localhost:9200 (admin / ver GRAFANA_ADMIN_PASSWORD)
+  # ----------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: ztrack_grafana
+    ports:
+      - "9200:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-ztrack}
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_SERVER_ROOT_URL: http://localhost:9200
+    volumes:
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana_data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
 volumes:
   redis_data:
+  grafana_data:

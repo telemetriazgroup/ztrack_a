@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0c0f14" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <title>ZTRACK — Panel de flota</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dashboard/css/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header class="header">
+      <div class="brand">
+        <span class="brand-mark">Z</span>
+        <div>
+          <h1>ZTRACK Flota</h1>
+          <p class="subtitle desktop-only">Último dato por IMEI (<code>i</code>) · <strong>GMT-5</strong></p>
+        </div>
+      </div>
+      <div class="header-actions">
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab active" data-tipo="TermoKing">TermoKing</button>
+          <button type="button" class="tab" data-tipo="Tunel">Túnel</button>
+        </div>
+        <label class="auto-refresh desktop-only">
+          <input type="checkbox" id="autoRefresh" checked />
+          Auto 30s
+        </label>
+        <button type="button" class="btn btn-primary btn-icon-mobile" id="btnRefresh" title="Actualizar">↻</button>
+      </div>
+    </header>
+
+    <section class="mobile-search-bar" aria-label="Buscar dispositivo">
+      <div class="search-field-wrap">
+        <span class="search-icon" aria-hidden="true">⌕</span>
+        <input
+          type="search"
+          id="searchImei"
+          class="search-input"
+          placeholder="Buscar IMEI o identificador i…"
+          autocomplete="off"
+          enterkeyhint="search"
+        />
+        <button type="button" class="btn-clear-search hidden" id="btnClearSearch" aria-label="Limpiar búsqueda">×</button>
+      </div>
+      <p class="search-hint" id="searchResultCount">Cargando…</p>
+    </section>
+
+    <div class="status-chips" role="group" aria-label="Filtrar por estado">
+      <button type="button" class="status-chip active" data-status="all">Todos</button>
+      <button type="button" class="status-chip" data-status="online">Online</button>
+      <button type="button" class="status-chip" data-status="wait">Espera</button>
+      <button type="button" class="status-chip" data-status="offline">Offline</button>
+    </div>
+
+    <section class="stats" id="statsRow">
+      <article class="stat-card stat-online">
+        <span class="stat-label">Online</span>
+        <span class="stat-value" id="statOnline">—</span>
+      </article>
+      <article class="stat-card stat-wait">
+        <span class="stat-label">Espera</span>
+        <span class="stat-value" id="statWait">—</span>
+      </article>
+      <article class="stat-card stat-offline">
+        <span class="stat-label">Offline</span>
+        <span class="stat-value" id="statOffline">—</span>
+      </article>
+      <article class="stat-card stat-total">
+        <span class="stat-label">Total</span>
+        <span class="stat-value" id="statTotal">—</span>
+      </article>
+    </section>
+
+    <details class="controls card controls-advanced">
+      <summary>Filtros avanzados (horas online / wait)</summary>
+      <div class="controls-inner">
+        <div class="control-group">
+          <label for="onlineH">Online ≤ (h)</label>
+          <input type="number" id="onlineH" value="1" min="0" max="168" step="0.5" />
+        </div>
+        <div class="control-group">
+          <label for="waitH">Wait hasta (h)</label>
+          <input type="number" id="waitH" value="24" min="1" max="720" step="1" />
+        </div>
+        <select id="filterStatus" class="sr-only" aria-hidden="true" tabindex="-1">
+          <option value="all">Todos</option>
+          <option value="online">Online</option>
+          <option value="wait">En espera</option>
+          <option value="offline">Offline</option>
+        </select>
+      </div>
+    </details>
+
+    <div class="meta-bar">
+      <span id="metaRef">Cargando…</span>
+      <span id="metaCol" class="mono desktop-only"></span>
+    </div>
+
+    <main class="layout">
+      <section class="card list-section">
+        <div class="device-card-list" id="deviceCardList" role="list"></div>
+
+        <div class="table-wrap desktop-only">
+          <table>
+            <thead>
+              <tr>
+                <th>Estado</th>
+                <th>IMEI (i)</th>
+                <th>Último dato (GMT-5)</th>
+                <th>IP</th>
+                <th>Seguro</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="deviceTableBody">
+              <tr><td colspan="6" class="empty">Cargando dispositivos…</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="detail-backdrop hidden" id="detailBackdrop" aria-hidden="true"></div>
+      <aside class="card detail-panel" id="detailPanel" aria-label="Detalle del dispositivo">
+        <button type="button" class="btn-detail-back mobile-only" id="btnDetailBack" aria-label="Volver a la lista">
+          ← Lista
+        </button>
+        <div class="detail-placeholder" id="detailPlaceholder">
+          <p>Toca un dispositivo en la lista para ver su última trama y comandos.</p>
+        </div>
+        <div class="detail-content hidden" id="detailContent">
+          <header class="detail-header">
+            <h2 id="detailImei">—</h2>
+            <span class="badge" id="detailBadge">—</span>
+          </header>
+          <dl class="detail-meta" id="detailMeta"></dl>
+          <div class="trama-view-header">
+            <h3>Última trama</h3>
+            <div class="trama-view-tabs" role="tablist">
+              <button type="button" class="trama-tab active" data-view="json">JSON</button>
+              <button type="button" class="trama-tab" data-view="decoded">Decodificado</button>
+            </div>
+          </div>
+          <div id="detailTramaJsonWrap">
+            <pre class="trama-json" id="detailTrama"></pre>
+          </div>
+          <div id="detailTramaDecodedWrap" class="hidden">
+            <p class="decode-loading hidden" id="decodeLoading">Decodificando…</p>
+            <div id="detailTramaDecoded" class="decode-panel"></div>
+          </div>
+          <h3>Comandos ejecutados <span class="tz-hint">(10 por página)</span></h3>
+          <div class="comandos-wrap" id="detailComandos">
+            <p class="comandos-loading hidden">Cargando comandos…</p>
+            <p class="comandos-empty hidden">Sin comandos ejecutados en el periodo.</p>
+            <table class="comandos-table hidden">
+              <thead>
+                <tr>
+                  <th>Ejecutado (GMT-5)</th>
+                  <th>Comando</th>
+                  <th>Usuario</th>
+                </tr>
+              </thead>
+              <tbody id="detailComandosBody"></tbody>
+            </table>
+            <nav class="comandos-pager hidden" id="comandosPager" aria-label="Paginación de comandos">
+              <button type="button" class="btn btn-ghost btn-touch" id="comandosPrev" disabled>Anterior</button>
+              <span class="pager-info" id="comandosPagerInfo">Página 1 de 1</span>
+              <button type="button" class="btn btn-ghost btn-touch" id="comandosNext" disabled>Siguiente</button>
+            </nav>
+          </div>
+        </div>
+      </aside>
+    </main>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script src="/dashboard/js/app.js" type="module"></script>
+</body>
+</html>

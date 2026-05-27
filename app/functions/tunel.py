@@ -31,6 +31,17 @@ _TIPO = "Tunel"
 
 async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
     """Entry point del POST /Tunel/. Delega a guardar_datos() con tipo="Tunel"."""
+    #analizar persistencia de duplicidad 
+    doc =ztrack_data
+    imei = doc.get("i", "")
+    exepcional = ["868428040551750","860389052988223","868428047365683","867856038562796","866782049840560","866262036100104"]
+    if not imei:
+        return False
+    else : 
+        if imei in exepcional:
+            return await guardar_datos(ztrack_data, secured=secured, tipo_dispositivo="TermoKing")
+        else:
+            return False
     return await guardar_datos(ztrack_data, secured=secured, tipo_dispositivo="Tunel")
 
 

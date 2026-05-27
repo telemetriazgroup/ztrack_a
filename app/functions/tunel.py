@@ -4,13 +4,12 @@ app/functions/tunel.py
 Funciones de negocio para el módulo Túnel.
 Mismo patrón que termoking.py pero para dispositivos de túnel de frío.
 """
-from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from app.core.datetime_utils import server_now
 from app.core.logging import get_logger
 from app.database.mongodb import bd_gene, collection, get_control_collection
-from app.functions.guardar_datos import guardar_datos
+from app.functions.telemetria_dual import persistir_telemetria
 from app.functions.decodificado_queries import (
     buscar_decodificado_imei_rango,
     buscar_live_oficial_parcial,
@@ -30,24 +29,14 @@ _TIPO = "Tunel"
 
 
 async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
-    """Entry point del POST /Tunel/. Delega a guardar_datos() con tipo="Tunel"."""
-    #analizar persistencia de duplicidad 
-    doc =ztrack_data
-    print(doc)
-    imei = doc.get("i", "")
-    print(imei)
-    exepcional = ["868428040551750","860389052988223","868428047365683","867856038562796","866782049840560","866262036100104"]
-    if not imei:
-        print("no imei")
-        return False
-    else : 
-        if imei in exepcional:
-            print("exepcional")
-            x =  await guardar_datos(ztrack_data, secured=secured, tipo_dispositivo="TermoKing")
-        else:
-            return False
-    print("jajaj tamos mal")
-    return await guardar_datos(ztrack_data, secured=secured, tipo_dispositivo="Tunel")
+    """
+    Entry point legacy. El POST /Tunel/ usa handle_telemetry_post → persistir_telemetria.
+    """
+    return await persistir_telemetria(
+        ztrack_data,
+        secured=secured,
+        tipo_entrada="Tunel",
+    )
 
 
 async def insertar_comando(datos: dict) -> dict:

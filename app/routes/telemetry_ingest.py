@@ -10,7 +10,7 @@ from app.core.metrics import (
     TELEMETRY_PROCESSING_DURATION,
     TELEMETRY_RECEIVED,
 )
-from app.functions.guardar_datos import guardar_datos
+from app.functions.telemetria_dual import persistir_telemetria
 from app.middleware.auth import DeviceAuthResult
 
 logger = get_logger(__name__)
@@ -41,10 +41,10 @@ async def handle_telemetry_post(
             pass
 
         try:
-            comando = await guardar_datos(
+            comando = await persistir_telemetria(
                 doc,
                 secured=device.secured,
-                tipo_dispositivo=tipo_dispositivo,
+                tipo_entrada=tipo_dispositivo,
             )
             TELEMETRY_RECEIVED.labels(modulo=modulo, status="ok").inc()
         except Exception:

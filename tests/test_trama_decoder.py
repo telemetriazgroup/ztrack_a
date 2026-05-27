@@ -1,7 +1,7 @@
 """Tests del decodificador de tramas."""
 import pytest
 
-from app.functions.trama_decoder import decode_channel, decode_trama
+from app.functions.trama_decoder import convertir_valor, decode_channel, decode_trama
 
 REAL_D02 = (
     "1B0204000082A7000401FE7F04010C0114012301FF7F0F01FE7FFE7FFE7FFE7F"
@@ -21,6 +21,25 @@ class TestTramaDecoder:
         r = decode_channel("d07", "0,0,0,0,-1.0")
         assert r["tipo"] == "csv"
         assert r["valores"][-1] == -1.0
+
+    def test_decode_csv_espacios(self):
+        raw = "1 32516 1051 0 0 0 0.0"
+        r = decode_channel("d07", raw)
+        assert r["tipo"] == "csv"
+        assert r["valores"] == [1, 32516, 1051, 0, 0, 0, 0.0]
+
+    def test_convertir_valor_escalar_y_lista(self):
+        assert convertir_valor("8.6") == 8.6
+        assert convertir_valor("1 32516 1051 0 0 0 0.0") == [
+            1,
+            32516,
+            1051,
+            0,
+            0,
+            0,
+            0.0,
+        ]
+        assert convertir_valor("1,2,3") == [1, 2, 3]
 
     def test_decode_thermoking_1b02(self):
         r = decode_channel("d02", REAL_D02)

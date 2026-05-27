@@ -21,6 +21,100 @@ _TK_PREFIX = re.compile(r"^F+1B02", re.IGNORECASE)
 _INVALID_WORD = {0x7FFE, 0xFE7F, 0x7FFF, 0xFFFF}
 
 
+def _token_es_numerico(token: str) -> bool:
+    t = token.strip().replace(",", ".")
+    if not t:
+        return False
+    try:
+        float(t)
+        return True
+    except ValueError:
+        return False
+
+
+def _parse_token(token: str) -> int | float:
+    """Convierte un token a int o float (coma o punto decimal)."""
+    t = token.strip().replace(",", ".")
+    if "." in t:
+        return float(t)
+    return int(t)
+
+
+def _split_tokens_numericos(value: str) -> list[str]:
+    """Separa por coma o por espacios: '1,2,3' o '1 32516 1051 0 0 0 0.0'."""
+    s = value.strip()
+    if not s:
+        return []
+    if "," in s:
+        return [p.strip() for p in s.split(",") if p.strip()]
+    return [p for p in s.split() if p.strip()]
+
+
+def convertir_valor(valor: Any) -> int | float | list[int | float] | str | None:
+    """
+    Convierte un valor de canal a número, lista de números o texto.
+
+    Evita ValueError cuando llega una cadena con varios números separados por espacios
+    (ej. '1 32516 1051 0 0 0 0.0').
+    """
+    if valor is None:
+        return None
+    if isinstance(valor, bool):
+        return int(valor)
+    if isinstance(valor, int):
+        return valor
+    if isinstance(valor, float):
+        return valor
+
+    s = str(valor).strip()
+    if not s:
+        return None
+
+    if len(_split_tokens_numericos(s)) == 1 and "," not in s and " " not in s:
+        try:
+            return _parse_token(s)
+        except ValueError:
+            return s
+
+    partes = _split_tokens_numericos(s)
+    if len(partes) > 1 and all(_token_es_numerico(p) for p in partes):
+        try:
+            return [_parse_token(p) for p in partes]
+        except ValueError:
+            pass
+
+    if len(partes) == 1:
+        try:
+            return _parse_token(partes[0])
+        except ValueError:
+            return s
+
+    valores: list[int | float | str] = []
+    for p in partes:
+        try:
+            valores.append(_parse_token(p))
+        except ValueError:
+            valores.append(p)
+    return valores
+
+
+def parse_valores_cadena(value: str) -> list[Any]:
+    """Lista de valores numéricos (o texto residual) desde CSV o espacios."""
+    partes = _split_tokens_numericos(value)
+    out: list[Any] = []
+    for p in partes:
+        try:
+            out.append(_parse_token(p))
+        except ValueError:
+            out.append(p)
+    return out
+
+
+def _es_lista_numerica(value: str) -> bool:
+    partes = _split_tokens_numericos(value)
+    return len(partes) > 0 and all(_token_es_numerico(p) for p in partes)
+
+
 def _clean_hex(value: str) -> str:
     return "".join(c for c in value.strip().upper() if c in "0123456789ABCDEF")
 
@@ -69,7 +163,7 @@ def _classify_channel(value: Any) -> str:
     s = str(value).strip()
     if not s:
         return "vacio"
-    if _CSV_NUMERIC.match(s) and "," in s:
+    if _CSV_NUMERIC.match(s) and _es_lista_numerica(s):
         return "csv"
     if _HEX_ONLY.match(s):
         if s.upper().startswith("1B02") or _TK_PREFIX.match(s):
@@ -81,21 +175,16 @@ def _classify_channel(value: Any) -> str:
 
 
 def _decode_csv(value: str) -> dict:
-    parts = [p.strip() for p in value.split(",")]
-    valores: list[Any] = []
-    for p in parts:
-        try:
-            valores.append(float(p) if "." in p else int(p))
-        except ValueError:
-            valores.append(p)
+    valores = parse_valores_cadena(value)
     labels = ["canal_1", "canal_2", "canal_3", "canal_4", "canal_5"]
     named = {
         labels[i] if i < len(labels) else f"valor_{i + 1}": v
         for i, v in enumerate(valores)
     }
+    sep = "coma" if "," in value else "espacio"
     return {
         "tipo": "csv",
-        "descripcion": "Valores numéricos separados por coma (típico en d07)",
+        "descripcion": f"Valores numéricos separados por {sep} (típico en d07)",
         "valores": valores,
         "campos": named,
     }

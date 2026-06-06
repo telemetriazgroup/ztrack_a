@@ -96,6 +96,87 @@ def _serialize_datos_total(trama: Optional[dict]) -> Optional[dict[str, Any]]:
     return out
 
 
+# Bitmap INYECTOR en rs (16 bits A–P): 0 = encendido, 1 = apagado
+_INYECTOR_VALVULAS: list[dict[str, Any]] = [
+    {"idx": 4, "letra": "E", "grupo": "CO₂", "zona": 1, "label": "Válvula CO₂ Zona 1"},
+    {"idx": 5, "letra": "F", "grupo": "CO₂", "zona": 2, "label": "Válvula CO₂ Zona 2"},
+    {"idx": 6, "letra": "G", "grupo": "CO₂", "zona": 3, "label": "Válvula CO₂ Zona 3"},
+    {"idx": 7, "letra": "H", "grupo": "Nitrógeno", "zona": 3, "label": "Válvula N₂ Zona 3"},
+    {"idx": 8, "letra": "I", "grupo": "Nitrógeno", "zona": 2, "label": "Válvula N₂ Zona 2"},
+    {"idx": 9, "letra": "J", "grupo": "Nitrógeno", "zona": 1, "label": "Válvula N₂ Zona 1"},
+    {"idx": 14, "letra": "O", "grupo": "Bypass", "zona": None, "label": "Bypass de oxígeno"},
+]
+
+
+def _valvula_inyector_ui(bit: str) -> dict[str, Any]:
+    if bit == "0":
+        return {"encendido": True, "estado": "ok", "etiqueta": "Encendido"}
+    if bit == "1":
+        return {"encendido": False, "estado": "danger", "etiqueta": "Apagado"}
+    return {"encendido": None, "estado": "none", "etiqueta": "—"}
+
+
+def parse_inyector_rs(rs: Optional[str]) -> dict[str, Any]:
+    """
+    Decodifica INYECTOR:0000111111100000,1& — solo el bitmap de 16 bits antes de la coma.
+    Posiciones A–D y K–N/P sin uso; E–J válvulas; O bypass oxígeno.
+    """
+    vacio: dict[str, Any] = {
+        "sin_dato": True,
+        "bitmap": None,
+        "raw_bloque": None,
+        "valvulas": [],
+        "grupos": {},
+        "leyenda": {"0": "Encendido", "1": "Apagado"},
+    }
+    if not rs or not str(rs).strip():
+        return vacio
+
+    bloque = next(
+        (b for b in parse_rs(rs) if (b.get("nombre") or "").upper() == "INYECTOR"),
+        None,
+    )
+    if not bloque:
+        return vacio
+
+    datos = (bloque.get("datos") or "").strip()
+    bitmap = datos.split(",")[0].strip() if datos else ""
+    if not bitmap or not all(c in "01" for c in bitmap):
+        return {
+            **vacio,
+            "raw_bloque": bloque.get("raw"),
+            "bitmap": bitmap or None,
+            "error": "Bitmap INYECTOR inválido (se esperan 16 bits 0/1)",
+        }
+
+    bitmap = bitmap.ljust(16, "0")[:16]
+    valvulas: list[dict[str, Any]] = []
+    grupos: dict[str, list[dict[str, Any]]] = {}
+    letras = "ABCDEFGHIJKLMNOP"
+
+    for spec in _INYECTOR_VALVULAS:
+        idx = spec["idx"]
+        bit = bitmap[idx]
+        entry = {**spec, "bit": bit, "posicion": idx + 1, **_valvula_inyector_ui(bit)}
+        valvulas.append(entry)
+        grupos.setdefault(spec["grupo"], []).append(entry)
+
+    mapa_bits = [
+        {"letra": letras[i], "bit": bitmap[i], "usado": i in {s["idx"] for s in _INYECTOR_VALVULAS}}
+        for i in range(16)
+    ]
+
+    return {
+        "sin_dato": False,
+        "bitmap": bitmap,
+        "raw_bloque": bloque.get("raw"),
+        "valvulas": valvulas,
+        "grupos": grupos,
+        "mapa_bits": mapa_bits,
+        "leyenda": {"0": "Encendido", "1": "Apagado"},
+    }
+
+
 def parse_rs(rs: Optional[str]) -> list[dict[str, str]]:
     """Separa bloques RIPENER / REEFER_QUEST / INYECTOR del campo rs."""
     if not rs or not str(rs).strip():
@@ -432,6 +513,7 @@ async def obtener_panel_estado() -> dict[str, Any]:
         "objetivos": objetivos,
         "rs": parse_rs(rs),
         "rs_raw": rs,
+        "inyector": parse_inyector_rs(rs),
         "datos_total": _serialize_datos_total(trama),
         "starcool": {
             "fuente": "d02",

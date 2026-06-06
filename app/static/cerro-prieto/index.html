@@ -113,14 +113,25 @@
       </div>
     </section>
 
-    <!-- 4. Datos total (JSON) -->
+    <!-- 4. Inyectores -->
+    <section class="card" aria-labelledby="inyectorTitle">
+      <h2 id="inyectorTitle">Inyectores</h2>
+      <p class="hint">Bitmap <code>INYECTOR</code> en <code>rs</code> · 0 = encendido · 1 = apagado</p>
+      <p class="inyector-bitmap-line muted" id="inyectorBitmap">—</p>
+      <div class="inyector-mapa hidden" id="inyectorMapa" aria-label="Mapa de bits A–P"></div>
+      <div id="inyectorValvulas" class="inyector-wrap">
+        <p class="muted">Cargando válvulas…</p>
+      </div>
+    </section>
+
+    <!-- 5. Datos total (JSON) -->
     <section class="card" aria-labelledby="datosTotalTitle">
       <h2 id="datosTotalTitle">Datos total</h2>
       <p class="hint">Última trama recibida del equipo</p>
       <pre class="datos-total-json" id="datosTotalJson">Cargando…</pre>
     </section>
 
-    <!-- 5. Verificación -->
+    <!-- 6. Verificación -->
     <section class="card" id="verificacionSection" aria-live="polite">
       <h2>Verificación de comandos</h2>
       <p class="hint">1 = pendiente · 0 = ejecutado</p>
@@ -129,7 +140,7 @@
       </div>
     </section>
 
-    <!-- 6. Historial -->
+    <!-- 7. Historial -->
     <section class="card" id="historialSection">
       <h2>Historial de comandos</h2>
       <div class="historial-wrap" id="historialWrap">

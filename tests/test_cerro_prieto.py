@@ -6,6 +6,7 @@ from app.functions.cerro_prieto import (
     _serialize_datos_total,
     evaluar_desviacion,
     parse_d02,
+    parse_inyector_rs,
     parse_rs,
     resolver_accion,
     starcool_bloques_desde_d02,
@@ -18,6 +19,29 @@ RS_EJEMPLO = (
 )
 
 D02_EJEMPLO = "8.6,9.1,10.0,3.1,8.4,2.9,87.8,88.6,100.0,1,0,1,0,1,1"
+
+
+def test_parse_inyector_bitmap():
+    inj = parse_inyector_rs(RS_EJEMPLO)
+    assert inj["sin_dato"] is False
+    assert inj["bitmap"] == "0000111101100010"
+    assert len(inj["valvulas"]) == 7
+    e = next(v for v in inj["valvulas"] if v["letra"] == "E")
+    assert e["bit"] == "0" and e["etiqueta"] == "Encendido"
+    f = next(v for v in inj["valvulas"] if v["letra"] == "F")
+    assert f["bit"] == "1" and f["etiqueta"] == "Apagado"
+    o = next(v for v in inj["valvulas"] if v["letra"] == "O")
+    assert o["bit"] == "1" and o["etiqueta"] == "Apagado"
+
+
+def test_parse_inyector_ejemplo_md():
+    rs = (
+        "RIPENER:0,20.0&REEFER_QUEST:1,5.0&INYECTOR:0000111111100000,1&"
+    )
+    inj = parse_inyector_rs(rs)
+    assert inj["bitmap"] == "0000111111100000"
+    assert next(v for v in inj["valvulas"] if v["letra"] == "E")["bit"] == "0"
+    assert next(v for v in inj["valvulas"] if v["letra"] == "O")["bit"] == "0"
 
 
 def test_parse_rs_tres_bloques():

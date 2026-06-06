@@ -963,6 +963,107 @@ code {
   color: var(--muted);
 }
 
+.inyector-bitmap-line {
+  margin: 0 0 0.5rem;
+  font-family: var(--mono);
+  font-size: 0.78rem;
+}
+
+.inyector-mapa {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.mapa-bit {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 1.75rem;
+  padding: 0.25rem 0.35rem;
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.mapa-bit small {
+  font-size: 0.65rem;
+  font-weight: 500;
+}
+
+.mapa-bit-usado.mapa-bit-0 {
+  border-color: rgba(34, 197, 94, 0.55);
+  color: var(--done);
+}
+
+.mapa-bit-usado.mapa-bit-1 {
+  border-color: rgba(239, 68, 68, 0.55);
+  color: var(--danger);
+}
+
+.inyector-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.valvulas-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 0.5rem;
+}
+
+.valvula-cell {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem 0.65rem;
+  text-align: center;
+}
+
+.valvula-label {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-bottom: 0.2rem;
+}
+
+.valvula-estado {
+  display: block;
+  font-size: 0.95rem;
+  margin-bottom: 0.1rem;
+}
+
+.valvula-meta {
+  display: block;
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.valvula-cell.valvula-on {
+  border-color: rgba(34, 197, 94, 0.55);
+  background: rgba(34, 197, 94, 0.12);
+}
+
+.valvula-cell.valvula-on .valvula-estado {
+  color: var(--done);
+}
+
+.valvula-cell.valvula-off {
+  border-color: rgba(239, 68, 68, 0.55);
+  background: rgba(239, 68, 68, 0.12);
+}
+
+.valvula-cell.valvula-off .valvula-estado {
+  color: var(--danger);
+}
+
 .sensor-grid-humedad {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));

@@ -283,11 +283,64 @@ function renderDatosTotal(data) {
   }
 }
 
+function valvulaCellHtml(v) {
+  const cls =
+    v.estado === "ok" ? "valvula-on" : v.estado === "danger" ? "valvula-off" : "valvula-unknown";
+  return `<div class="valvula-cell ${cls}">
+      <span class="valvula-label">${escapeHtml(v.label)}</span>
+      <strong class="valvula-estado">${escapeHtml(v.etiqueta)}</strong>
+      <span class="valvula-meta">${escapeHtml(v.letra)} · bit ${escapeHtml(v.bit)}</span>
+    </div>`;
+}
+
+function renderInyectores(data) {
+  const wrap = $("#inyectorValvulas");
+  const bitmapEl = $("#inyectorBitmap");
+  const mapaEl = $("#inyectorMapa");
+  const inj = data?.inyector || {};
+  if (!wrap) return;
+
+  if (inj.sin_dato) {
+    if (bitmapEl) bitmapEl.textContent = "Sin bloque INYECTOR en rs.";
+    mapaEl?.classList.add("hidden");
+    wrap.innerHTML = '<p class="muted">Sin datos de inyectores.</p>';
+    return;
+  }
+
+  if (bitmapEl) {
+    bitmapEl.innerHTML = `Bitmap: <code>${escapeHtml(inj.bitmap || "—")}</code>`;
+  }
+
+  if (mapaEl && inj.mapa_bits?.length) {
+    mapaEl.classList.remove("hidden");
+    mapaEl.innerHTML = inj.mapa_bits
+      .map((m) => {
+        const cls = m.usado ? `mapa-bit-usado mapa-bit-${m.bit}` : "mapa-bit-reservado";
+        return `<span class="mapa-bit ${cls}" title="${escapeHtml(m.letra)}=${escapeHtml(m.bit)}">${escapeHtml(m.letra)}<small>${escapeHtml(m.bit)}</small></span>`;
+      })
+      .join("");
+  } else {
+    mapaEl?.classList.add("hidden");
+  }
+
+  const grupos = inj.grupos || {};
+  const orden = ["CO₂", "Nitrógeno", "Bypass"];
+  const keys = orden.filter((g) => grupos[g]?.length);
+  wrap.innerHTML = keys
+    .map(
+      (g) => `<div class="inyector-grupo">
+        <h3 class="subheading">${escapeHtml(g)}</h3>
+        <div class="valvulas-grid">${(grupos[g] || []).map(valvulaCellHtml).join("")}</div>
+      </div>`
+    )
+    .join("");
+}
+
 function renderRs(data) {
   const el = $("#rsBlocks");
-  const blocks = data?.rs || [];
+  const blocks = (data?.rs || []).filter((b) => (b.nombre || "").toUpperCase() !== "INYECTOR");
   if (!blocks.length) {
-    el.innerHTML = '<p class="muted">Sin datos <code>rs</code>.</p>';
+    el.innerHTML = '<p class="muted">Sin datos <code>rs</code> (RIPENER / REEFER_QUEST).</p>';
     return;
   }
   el.innerHTML = blocks
@@ -322,6 +375,7 @@ function onObjetivosInputChange() {
   if (state.data) {
     renderD02(state.data);
     renderRs(state.data);
+    renderInyectores(state.data);
     renderDatosTotal(state.data);
   }
 }
@@ -340,6 +394,7 @@ async function aplicarObjetivos() {
       state.data = fresh;
       renderD02(fresh);
       renderRs(fresh);
+      renderInyectores(fresh);
       renderDatosTotal(fresh);
     } catch {
       /* continuar encolando objetivos */
@@ -368,6 +423,7 @@ function restaurarObjetivos() {
   if (state.data) {
     renderD02(state.data);
     renderRs(state.data);
+    renderInyectores(state.data);
     renderDatosTotal(state.data);
   }
 }
@@ -593,6 +649,7 @@ function renderAll(data) {
 
   renderD02(data);
   renderRs(data);
+  renderInyectores(data);
   renderDatosTotal(data);
   renderVerificacion(data);
   renderHistorial(data.comandos_recientes);

@@ -10,7 +10,8 @@ from app.functions.cerro_prieto import (
     CERRO_PRIETO_IMEI,
     aplicar_objetivos_panel,
     enviar_comando_panel,
-    objetivos_para_api,
+    listar_historial_objetivos,
+    obtener_objetivos_guardados,
     obtener_panel_estado,
 )
 
@@ -56,8 +57,15 @@ async def listar_acciones():
 
 @router.get("/objetivos")
 async def get_objetivos():
-    """Objetivos predefinidos y tolerancias de color."""
-    return objetivos_para_api()
+    """Objetivos guardados (o predeterminados) y tolerancias de color."""
+    objetivos = await obtener_objetivos_guardados()
+    historial = await listar_historial_objetivos()
+    return {"objetivos": objetivos, "historial": historial}
+
+
+@router.get("/objetivos/historial")
+async def get_historial_objetivos():
+    return {"historial": await listar_historial_objetivos()}
 
 
 @router.post("/objetivos/aplicar")

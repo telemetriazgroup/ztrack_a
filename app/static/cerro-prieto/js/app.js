@@ -23,6 +23,7 @@ const state = {
     co2: { ...OBJETIVOS_DEFAULT.co2 },
     o2: { ...OBJETIVOS_DEFAULT.o2 },
   },
+  objetivosDirty: false,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -124,6 +125,75 @@ function setObjetivosInputs(obj) {
   $("#objO2Z3").value = c(o2, 3, OBJETIVOS_DEFAULT.o2[3]);
   state.objetivos = getObjetivosFromInputs();
   updateObjetivosResumen();
+}
+
+function objetivosFromApi(apiObj) {
+  if (!apiObj?.co2 || !apiObj?.o2) return null;
+  const n = (m, z, def) => {
+    const v = m[z] ?? m[String(z)];
+    const num = parseFloat(v);
+    return Number.isFinite(num) ? num : def;
+  };
+  return {
+    co2: {
+      1: n(apiObj.co2, 1, OBJETIVOS_DEFAULT.co2[1]),
+      2: n(apiObj.co2, 2, OBJETIVOS_DEFAULT.co2[2]),
+      3: n(apiObj.co2, 3, OBJETIVOS_DEFAULT.co2[3]),
+    },
+    o2: {
+      1: n(apiObj.o2, 1, OBJETIVOS_DEFAULT.o2[1]),
+      2: n(apiObj.o2, 2, OBJETIVOS_DEFAULT.o2[2]),
+      3: n(apiObj.o2, 3, OBJETIVOS_DEFAULT.o2[3]),
+    },
+  };
+}
+
+function objetivosResumenTexto(apiObj) {
+  const o = objetivosFromApi(apiObj);
+  if (!o) return "—";
+  return `CO₂: Z1 ${o.co2[1]}% · Z2 ${o.co2[2]}% · Z3 ${o.co2[3]}%  |  O₂: Z1 ${o.o2[1]}% · Z2 ${o.o2[2]}% · Z3 ${o.o2[3]}%`;
+}
+
+function syncObjetivosFromApi(data, force = false) {
+  if (state.objetivosDirty && !force) return;
+  const parsed = objetivosFromApi(data?.objetivos);
+  if (!parsed) return;
+  setObjetivosInputs(parsed);
+  state.objetivosDirty = false;
+  updateObjetivosMeta(data?.objetivos);
+}
+
+function updateObjetivosMeta(apiObj) {
+  const el = $("#objetivosMeta");
+  if (!el) return;
+  if (apiObj?.actualizado_display) {
+    el.textContent = `Guardado: ${apiObj.actualizado_display}${apiObj.user ? ` · ${apiObj.user}` : ""}`;
+  } else {
+    el.textContent = "Objetivos predeterminados (aún no guardados en panel).";
+  }
+}
+
+function renderHistorialObjetivos(items) {
+  const ul = $("#objetivosHistorial");
+  if (!ul) return;
+  if (!items?.length) {
+    ul.innerHTML = '<li class="muted">Sin cambios registrados.</li>';
+    return;
+  }
+  ul.innerHTML = items
+    .map((h) => {
+      const ant = objetivosResumenTexto(h.anterior);
+      const neu = objetivosResumenTexto(h.nuevo);
+      return `<li class="objetivos-historial-item">
+        <p class="historial-head">
+          <span class="historial-fecha">${escapeHtml(h.fecha_display || h.fecha || "—")}</span>
+          <span class="historial-user muted">${escapeHtml(h.user || "")}</span>
+        </p>
+        <p class="obj-hist-line"><span class="obj-hist-label">Antes:</span> ${escapeHtml(ant)}</p>
+        <p class="obj-hist-line"><span class="obj-hist-label">Nuevo:</span> ${escapeHtml(neu)}</p>
+      </li>`;
+    })
+    .join("");
 }
 
 function evaluarLocal(valor, objetivo) {
@@ -283,6 +353,71 @@ function renderDatosTotal(data) {
   }
 }
 
+const INYECTOR_VALVULAS = [
+  { idx: 4, letra: "E", grupo: "CO₂", label: "Válvula CO₂ Zona 1" },
+  { idx: 5, letra: "F", grupo: "CO₂", label: "Válvula CO₂ Zona 2" },
+  { idx: 6, letra: "G", grupo: "CO₂", label: "Válvula CO₂ Zona 3" },
+  { idx: 7, letra: "H", grupo: "Nitrógeno", label: "Válvula N₂ Zona 3" },
+  { idx: 8, letra: "I", grupo: "Nitrógeno", label: "Válvula N₂ Zona 2" },
+  { idx: 9, letra: "J", grupo: "Nitrógeno", label: "Válvula N₂ Zona 1" },
+  { idx: 14, letra: "O", grupo: "Bypass", label: "Bypass de oxígeno" },
+];
+const INYECTOR_LETRAS = "ABCDEFGHIJKLMNOP";
+const INYECTOR_USED_IDX = new Set(INYECTOR_VALVULAS.map((v) => v.idx));
+
+function valvulaInyectorUi(bit) {
+  if (bit === "0") return { estado: "ok", etiqueta: "Encendido" };
+  if (bit === "1") return { estado: "danger", etiqueta: "Apagado" };
+  return { estado: "none", etiqueta: "—" };
+}
+
+/** Parsea INYECTOR desde API o, si falta, desde rs / rs_raw (respaldo). */
+function resolveInyectorData(data) {
+  const api = data?.inyector;
+  if (api && api.sin_dato === false && api.bitmap) {
+    return api;
+  }
+
+  let datos = null;
+  const bloque = (data?.rs || []).find(
+    (b) => String(b.nombre || "").toUpperCase() === "INYECTOR"
+  );
+  if (bloque?.datos) {
+    datos = bloque.datos;
+  } else if (data?.rs_raw) {
+    const m = String(data.rs_raw).match(/INYECTOR:([^&]+)/i);
+    if (m) datos = m[1];
+  }
+
+  if (!datos) {
+    return { sin_dato: true };
+  }
+
+  const bitmapRaw = String(datos).split(",")[0].trim();
+  if (!bitmapRaw || ![...bitmapRaw].every((c) => c === "0" || c === "1")) {
+    return { sin_dato: true, bitmap: bitmapRaw, error: "Bitmap inválido" };
+  }
+
+  const bitmap = bitmapRaw.padEnd(16, "0").slice(0, 16);
+  const valvulas = INYECTOR_VALVULAS.map((spec) => ({
+    ...spec,
+    bit: bitmap[spec.idx],
+    ...valvulaInyectorUi(bitmap[spec.idx]),
+  }));
+  const grupos = {};
+  valvulas.forEach((v) => {
+    if (!grupos[v.grupo]) grupos[v.grupo] = [];
+    grupos[v.grupo].push(v);
+  });
+  const mapa_bits = [...bitmap].map((bit, i) => ({
+    letra: INYECTOR_LETRAS[i],
+    bit,
+    usado: INYECTOR_USED_IDX.has(i),
+  }));
+
+  return { sin_dato: false, bitmap, valvulas, grupos, mapa_bits, _fuente: "cliente" };
+}
+
 function valvulaCellHtml(v) {
   const cls =
     v.estado === "ok" ? "valvula-on" : v.estado === "danger" ? "valvula-off" : "valvula-unknown";
@@ -297,43 +432,53 @@ function renderInyectores(data) {
   const wrap = $("#inyectorValvulas");
   const bitmapEl = $("#inyectorBitmap");
   const mapaEl = $("#inyectorMapa");
-  const inj = data?.inyector || {};
   if (!wrap) return;
 
-  if (inj.sin_dato) {
-    if (bitmapEl) bitmapEl.textContent = "Sin bloque INYECTOR en rs.";
-    mapaEl?.classList.add("hidden");
-    wrap.innerHTML = '<p class="muted">Sin datos de inyectores.</p>';
-    return;
-  }
+  try {
+    const inj = resolveInyectorData(data);
 
-  if (bitmapEl) {
-    bitmapEl.innerHTML = `Bitmap: <code>${escapeHtml(inj.bitmap || "—")}</code>`;
-  }
+    if (inj.sin_dato) {
+      if (bitmapEl) bitmapEl.textContent = inj.error || "Sin bloque INYECTOR en rs.";
+      mapaEl?.classList.add("hidden");
+      wrap.innerHTML = '<p class="muted">Sin datos de inyectores.</p>';
+      return;
+    }
 
-  if (mapaEl && inj.mapa_bits?.length) {
-    mapaEl.classList.remove("hidden");
-    mapaEl.innerHTML = inj.mapa_bits
-      .map((m) => {
-        const cls = m.usado ? `mapa-bit-usado mapa-bit-${m.bit}` : "mapa-bit-reservado";
-        return `<span class="mapa-bit ${cls}" title="${escapeHtml(m.letra)}=${escapeHtml(m.bit)}">${escapeHtml(m.letra)}<small>${escapeHtml(m.bit)}</small></span>`;
-      })
-      .join("");
-  } else {
-    mapaEl?.classList.add("hidden");
-  }
+    if (bitmapEl) {
+      const extra = inj._fuente === "cliente" ? ' <span class="muted">(parseado en panel)</span>' : "";
+      bitmapEl.innerHTML = `Bitmap: <code>${escapeHtml(inj.bitmap)}</code>${extra}`;
+    }
 
-  const grupos = inj.grupos || {};
-  const orden = ["CO₂", "Nitrógeno", "Bypass"];
-  const keys = orden.filter((g) => grupos[g]?.length);
-  wrap.innerHTML = keys
-    .map(
-      (g) => `<div class="inyector-grupo">
+    if (mapaEl && inj.mapa_bits?.length) {
+      mapaEl.classList.remove("hidden");
+      mapaEl.innerHTML = inj.mapa_bits
+        .map((m) => {
+          const cls = m.usado ? `mapa-bit-usado mapa-bit-${m.bit}` : "mapa-bit-reservado";
+          return `<span class="mapa-bit ${cls}" title="${escapeHtml(m.letra)}=${escapeHtml(m.bit)}">${escapeHtml(m.letra)}<small>${escapeHtml(m.bit)}</small></span>`;
+        })
+        .join("");
+    } else {
+      mapaEl?.classList.add("hidden");
+    }
+
+    const grupos = inj.grupos || {};
+    const orden = ["CO₂", "Nitrógeno", "Bypass"];
+    const keys = orden.filter((g) => grupos[g]?.length);
+    if (!keys.length && inj.valvulas?.length) {
+      wrap.innerHTML = inj.valvulas.map(valvulaCellHtml).join("");
+      return;
+    }
+    wrap.innerHTML = keys
+      .map(
+        (g) => `<div class="inyector-grupo">
         <h3 class="subheading">${escapeHtml(g)}</h3>
         <div class="valvulas-grid">${(grupos[g] || []).map(valvulaCellHtml).join("")}</div>
       </div>`
-    )
-    .join("");
+      )
+      .join("");
+  } catch (e) {
+    wrap.innerHTML = `<p class="muted">Error al mostrar inyectores: ${escapeHtml(e.message)}</p>`;
+  }
 }
 
 function renderRs(data) {
@@ -370,6 +515,7 @@ function fillConfirmContext(data) {
 
 
 function onObjetivosInputChange() {
+  state.objetivosDirty = true;
   state.objetivos = getObjetivosFromInputs();
   updateObjetivosResumen();
   if (state.data) {
@@ -407,7 +553,18 @@ async function aplicarObjetivos() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-    showToast(data.mensaje || "Objetivos encolados", true);
+    if (data.objetivos) {
+      syncObjetivosFromApi({ objetivos: data.objetivos }, true);
+      if (state.data) {
+        state.data.objetivos = data.objetivos;
+        state.data.objetivos_historial = data.objetivos_historial || state.data.objetivos_historial;
+        renderD02(state.data);
+      }
+    }
+    if (data.objetivos_historial) {
+      renderHistorialObjetivos(data.objetivos_historial);
+    }
+    showToast(data.mensaje || "Objetivos guardados", true);
     await loadEstado();
     $("#verificacionSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
@@ -418,7 +575,10 @@ async function aplicarObjetivos() {
 }
 
 function restaurarObjetivos() {
-  setObjetivosInputs({ co2: OBJETIVOS_DEFAULT.co2, o2: OBJETIVOS_DEFAULT.o2 });
+  state.objetivosDirty = true;
+  const defs = state.data?.objetivos?.defaults;
+  const parsed = objetivosFromApi(defs ? { co2: defs.co2, o2: defs.o2 } : null);
+  setObjetivosInputs(parsed || { co2: OBJETIVOS_DEFAULT.co2, o2: OBJETIVOS_DEFAULT.o2 });
   updateObjetivosResumen();
   if (state.data) {
     renderD02(state.data);
@@ -647,6 +807,9 @@ function renderAll(data) {
     ? "El dispositivo aún no ha reportado datos."
     : `Último dato: ${data.ultima_actualizacion_display || data.ultima_actualizacion || "—"}`;
 
+  syncObjetivosFromApi(data);
+  renderHistorialObjetivos(data.objetivos_historial);
+
   renderD02(data);
   renderRs(data);
   renderInyectores(data);
@@ -703,7 +866,5 @@ function bindEvents() {
 }
 
 bindEvents();
-setObjetivosInputs({ co2: OBJETIVOS_DEFAULT.co2, o2: OBJETIVOS_DEFAULT.o2 });
-updateObjetivosResumen();
 loadEstado();
 setInterval(() => loadEstado(), REFRESH_MS);

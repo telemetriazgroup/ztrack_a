@@ -3,11 +3,12 @@ Panel Cerro Prieto — IMEI fijo TermoKing, parsing rs/d02 y cola de comandos PA
 """
 from __future__ import annotations
 
+import re
 from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from app.core.datetime_utils import format_for_display, server_now, timezone_label
-from app.database.mongodb import get_control_collection
+from app.database.mongodb import collection, get_control_collection
 from app.functions.dashboard import _serialize_comando, _serialize_dt
 from app.functions.live_helpers import _ultimo_live_un_imei
 from app.functions.termoking import insertar_comando
@@ -132,12 +133,18 @@ def parse_inyector_rs(rs: Optional[str]) -> dict[str, Any]:
     if not rs or not str(rs).strip():
         return vacio
 
+    bloques = parse_rs(rs)
     bloque = next(
-        (b for b in parse_rs(rs) if (b.get("nombre") or "").upper() == "INYECTOR"),
+        (b for b in bloques if (b.get("nombre") or "").upper() == "INYECTOR"),
         None,
     )
     if not bloque:
-        return vacio
+        m = re.search(r"INYECTOR:([^&]+)", str(rs), re.IGNORECASE)
+        if m:
+            datos_fb = m.group(1).strip()
+            bloque = {"nombre": "INYECTOR", "datos": datos_fb, "raw": m.group(0) + "&"}
+        else:
+            return vacio
 
     datos = (bloque.get("datos") or "").strip()
     bitmap = datos.split(",")[0].strip() if datos else ""
@@ -241,15 +248,33 @@ def evaluar_desviacion(
     }
 
 
-def objetivos_para_api(
-    co2: Optional[dict] = None,
-    o2: Optional[dict] = None,
-) -> dict[str, Any]:
-    co2_map = _normalizar_objetivos_por_zona(co2, OBJETIVOS_CO2_DEFAULT)
-    o2_map = _normalizar_objetivos_por_zona(o2, OBJETIVOS_O2_DEFAULT)
+OBJETIVOS_PANEL_COL = "cerro_prieto_panel"
+_OBJETIVOS_DOC_ID = f"objetivos_{CERRO_PRIETO_IMEI}"
+
+
+def _objetivos_maps_para_api(
+    co2_map: dict[int, float],
+    o2_map: dict[int, float],
+) -> dict[str, dict[str, float]]:
     return {
         "co2": {str(z): co2_map[z] for z in (1, 2, 3)},
         "o2": {str(z): o2_map[z] for z in (1, 2, 3)},
+    }
+
+
+def objetivos_para_api(
+    co2: Optional[dict] = None,
+    o2: Optional[dict] = None,
+    *,
+    actualizado: Optional[datetime] = None,
+    actualizado_display: Optional[str] = None,
+    user: Optional[str] = None,
+) -> dict[str, Any]:
+    co2_map = _normalizar_objetivos_por_zona(co2, OBJETIVOS_CO2_DEFAULT)
+    o2_map = _normalizar_objetivos_por_zona(o2, OBJETIVOS_O2_DEFAULT)
+    out: dict[str, Any] = {
+        **_objetivos_maps_para_api(co2_map, o2_map),
+        "defaults": _objetivos_maps_para_api(OBJETIVOS_CO2_DEFAULT, OBJETIVOS_O2_DEFAULT),
         "tolerancias": {"ok": TOLERANCIA_OK, "warn": TOLERANCIA_WARN},
         "leyenda": {
             "ok": f"±{TOLERANCIA_OK} % del objetivo (verde)",
@@ -257,6 +282,110 @@ def objetivos_para_api(
             "danger": f"Fuera de ±{TOLERANCIA_WARN} % (rojo)",
         },
     }
+    if actualizado is not None:
+        out["actualizado"] = _serialize_dt(actualizado)
+    if actualizado_display is not None:
+        out["actualizado_display"] = actualizado_display
+    if user:
+        out["user"] = user
+    return out
+
+
+def _serialize_historial_objetivos(doc: dict) -> dict[str, Any]:
+    return {
+        "fecha": _serialize_dt(doc.get("fecha")),
+        "fecha_display": format_for_display(doc.get("fecha"), with_timezone=False),
+        "user": doc.get("user"),
+        "motivo": doc.get("motivo"),
+        "anterior": doc.get("anterior"),
+        "nuevo": doc.get("nuevo"),
+    }
+
+
+async def _objetivos_panel_col():
+    return collection(OBJETIVOS_PANEL_COL)
+
+
+async def obtener_objetivos_guardados() -> dict[str, Any]:
+    """Objetivos persistidos o valores predeterminados si no hay registro."""
+    col = await _objetivos_panel_col()
+    doc = await col.find_one({"_id": _OBJETIVOS_DOC_ID}, {"_id": 0})
+    if not doc:
+        return objetivos_para_api()
+    return objetivos_para_api(
+        doc.get("co2"),
+        doc.get("o2"),
+        actualizado=doc.get("actualizado"),
+        actualizado_display=format_for_display(doc.get("actualizado"), with_timezone=False),
+        user=doc.get("user"),
+    )
+
+
+async def listar_historial_objetivos(limite: int = 15) -> list[dict[str, Any]]:
+    col = await _objetivos_panel_col()
+    cursor = col.find(
+        {"tipo": "objetivos_historial", "imei": CERRO_PRIETO_IMEI},
+        {"_id": 0},
+    ).sort("fecha", -1).limit(limite)
+    docs = await cursor.to_list(length=limite)
+    return [_serialize_historial_objetivos(d) for d in docs]
+
+
+async def guardar_objetivos_con_historial(
+    co2_map: dict[int, float],
+    o2_map: dict[int, float],
+    *,
+    user: str,
+    motivo: str = "aplicar",
+) -> dict[str, Any]:
+    """Persiste objetivos y registra valores anteriores en historial."""
+    col = await _objetivos_panel_col()
+    now = server_now()
+    anterior_doc = await col.find_one({"_id": _OBJETIVOS_DOC_ID}, {"_id": 0})
+    anterior_co2 = _normalizar_objetivos_por_zona(
+        (anterior_doc or {}).get("co2"), OBJETIVOS_CO2_DEFAULT
+    )
+    anterior_o2 = _normalizar_objetivos_por_zona(
+        (anterior_doc or {}).get("o2"), OBJETIVOS_O2_DEFAULT
+    )
+    anterior = _objetivos_maps_para_api(anterior_co2, anterior_o2)
+    nuevo = _objetivos_maps_para_api(co2_map, o2_map)
+
+    cambio = anterior != nuevo or not anterior_doc
+    if cambio:
+        await col.insert_one(
+            {
+                "tipo": "objetivos_historial",
+                "imei": CERRO_PRIETO_IMEI,
+                "fecha": now,
+                "user": user,
+                "motivo": motivo,
+                "anterior": anterior,
+                "nuevo": nuevo,
+            }
+        )
+
+    await col.update_one(
+        {"_id": _OBJETIVOS_DOC_ID},
+        {
+            "$set": {
+                "imei": CERRO_PRIETO_IMEI,
+                "co2": nuevo["co2"],
+                "o2": nuevo["o2"],
+                "actualizado": now,
+                "user": user,
+            }
+        },
+        upsert=True,
+    )
+
+    return objetivos_para_api(
+        co2_map,
+        o2_map,
+        actualizado=now,
+        actualizado_display=format_for_display(now, with_timezone=False),
+        user=user,
+    )
 
 
 def comando_objetivo_co2(zona: int, valor: float) -> str:
@@ -495,7 +624,8 @@ async def obtener_panel_estado() -> dict[str, Any]:
 
     rs = trama.get("rs") if trama else None
     d02 = trama.get("d02") if trama else None
-    objetivos = objetivos_para_api()
+    objetivos = await obtener_objetivos_guardados()
+    historial_objetivos = await listar_historial_objetivos()
     d02_parsed = parse_d02(
         d02,
         objetivos_co2=objetivos["co2"],
@@ -511,6 +641,7 @@ async def obtener_panel_estado() -> dict[str, Any]:
         "ultima_actualizacion_display": fecha_display,
         "sin_datos": trama is None,
         "objetivos": objetivos,
+        "objetivos_historial": historial_objetivos,
         "rs": parse_rs(rs),
         "rs_raw": rs,
         "inyector": parse_inyector_rs(rs),
@@ -604,9 +735,15 @@ async def aplicar_objetivos_panel(
         row = await insertar_comando(doc)
         insertados.append(_serialize_comando(row) if row else doc)
 
+    objetivos_guardados = await guardar_objetivos_con_historial(
+        co2_map, o2_map, user=user, motivo="aplicar"
+    )
+    historial = await listar_historial_objetivos()
+
     return {
         "ok": True,
-        "mensaje": "6 comandos de objetivos encolados",
-        "objetivos": objetivos_para_api(co2_map, o2_map),
+        "mensaje": "Objetivos guardados y 6 comandos encolados al equipo",
+        "objetivos": objetivos_guardados,
+        "objetivos_historial": historial,
         "comandos_insertados": insertados,
     }

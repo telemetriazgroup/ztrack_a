@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/cerro-prieto/css/styles.css" />
+  <link rel="stylesheet" href="/cerro-prieto/css/styles.css?v=inyector2" />
 </head>
 <body>
   <div class="app">
@@ -84,7 +84,14 @@
           </div>
           <div class="objetivos-actions">
             <button type="button" class="btn btn-ghost btn-touch" id="btnRestaurarObjetivos">Predeterminados</button>
-            <button type="button" class="btn btn-primary btn-touch" id="btnAplicarObjetivos">Aplicar al equipo</button>
+            <button type="button" class="btn btn-primary btn-touch" id="btnAplicarObjetivos">Guardar y aplicar al equipo</button>
+          </div>
+          <p class="objetivos-meta muted" id="objetivosMeta" aria-live="polite"></p>
+          <div class="objetivos-historial-wrap">
+            <h3 class="subheading">Historial de objetivos</h3>
+            <ul class="objetivos-historial" id="objetivosHistorial">
+              <li class="muted">Sin cambios registrados.</li>
+            </ul>
           </div>
         </div>
       </section>
@@ -177,6 +184,6 @@
 
   <div class="toast hidden" id="toast"></div>
 
-  <script src="/cerro-prieto/js/app.js" type="module"></script>
+  <script src="/cerro-prieto/js/app.js?v=objetivos1" type="module"></script>
 </body>
 </html>

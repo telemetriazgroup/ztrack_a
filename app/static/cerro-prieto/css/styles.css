@@ -693,7 +693,46 @@ code {
   margin-bottom: 0.75rem;
 }
 
-.objetivos-panel-wrap .objetivos-actions {
+.objetivos-panel-wrap .objetivos-meta {
+  margin: 0.65rem 0 0;
+  font-size: 0.78rem;
+}
+
+.objetivos-historial-wrap {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.objetivos-historial {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.objetivos-historial-item {
+  padding: 0.55rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+
+.objetivos-historial-item:last-child {
+  border-bottom: none;
+}
+
+.obj-hist-line {
+  margin: 0.2rem 0 0;
+  line-height: 1.4;
+}
+
+.obj-hist-label {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.objetivos-actions {
   display: flex;
   gap: 0.5rem;
   margin: 0;

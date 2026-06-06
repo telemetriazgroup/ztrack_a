@@ -5,6 +5,7 @@ from app.functions.cerro_prieto import (
     CERRO_PRIETO_ACCIONES,
     _serialize_datos_total,
     evaluar_desviacion,
+    objetivos_para_api,
     parse_d02,
     parse_inyector_rs,
     parse_rs,
@@ -99,6 +100,13 @@ def test_serialize_datos_total():
     assert out["i"] == "868428044554560"
     assert out["d02"] == D02_EJEMPLO
     assert isinstance(out["fecha"], str)
+
+
+def test_objetivos_para_api_incluye_defaults():
+    o = objetivos_para_api({"1": 9, "2": 11, "3": 13}, {"1": 5, "2": 5, "3": 9})
+    assert o["co2"]["1"] == 9
+    assert o["defaults"]["co2"]["1"] == 8
+    assert o["defaults"]["o2"]["3"] == 8
 
 
 def test_evaluar_desviacion_colores():

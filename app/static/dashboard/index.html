@@ -41,7 +41,7 @@
           type="search"
           id="searchImei"
           class="search-input"
-          placeholder="Buscar IMEI o identificador i…"
+          placeholder="Buscar IMEI, cliente o nº telemetría…"
           autocomplete="off"
           enterkeyhint="search"
         />
@@ -111,6 +111,8 @@
               <tr>
                 <th>Estado</th>
                 <th>IMEI (i)</th>
+                <th>Nº telemetría</th>
+                <th>Cliente</th>
                 <th>Último dato (GMT-5)</th>
                 <th>IP</th>
                 <th>Seguro</th>
@@ -118,7 +120,7 @@
               </tr>
             </thead>
             <tbody id="deviceTableBody">
-              <tr><td colspan="6" class="empty">Cargando dispositivos…</td></tr>
+              <tr><td colspan="8" class="empty">Cargando dispositivos…</td></tr>
             </tbody>
           </table>
         </div>
@@ -138,6 +140,39 @@
             <span class="badge" id="detailBadge">—</span>
           </header>
           <dl class="detail-meta" id="detailMeta"></dl>
+          <section class="equipo-ficha card-inner" id="equipoFicha">
+            <h3>Ficha del equipo</h3>
+            <p class="muted equipo-ficha-hint">Catálogo persistente (independiente del mes de la API).</p>
+            <div class="equipo-form">
+              <label class="equipo-field">
+                <span>IMEI chip</span>
+                <input type="text" id="equipoImei" readonly class="mono" />
+              </label>
+              <label class="equipo-field">
+                <span>Nº telemetría</span>
+                <input type="text" id="equipoNumero" placeholder="Ej. TK-042" autocomplete="off" />
+              </label>
+              <label class="equipo-field">
+                <span>Cliente / descripción</span>
+                <input type="text" id="equipoCliente" placeholder="Ej. Cerro Prieto" autocomplete="off" />
+              </label>
+              <label class="equipo-field equipo-field-full">
+                <span>Notas</span>
+                <textarea id="equipoNotas" rows="2" placeholder="Observaciones…"></textarea>
+              </label>
+            </div>
+            <div class="equipo-tipos" id="equipoTipos"></div>
+            <div class="equipo-actions">
+              <button type="button" class="btn btn-primary btn-touch" id="btnGuardarEquipo">Guardar ficha</button>
+            </div>
+            <p class="equipo-meta muted" id="equipoMeta"></p>
+            <div class="equipo-historial-wrap">
+              <h4 class="subheading">Historial de cambios</h4>
+              <ul class="equipo-historial" id="equipoHistorial">
+                <li class="muted">Sin cambios registrados.</li>
+              </ul>
+            </div>
+          </section>
           <div class="trama-view-header">
             <h3>Última trama</h3>
             <div class="trama-view-tabs" role="tablist">
@@ -179,6 +214,6 @@
 
   <div class="toast hidden" id="toast"></div>
 
-  <script src="/dashboard/js/app.js" type="module"></script>
+  <script src="/dashboard/js/app.js?v=equipos1" type="module"></script>
 </body>
 </html>

@@ -123,6 +123,64 @@ async def buscar_imei_decodificado(datos: dict) -> dict:
     return await buscar_decodificado_imei_rango(datos)
 
 
+
+
+def bd_gene_tk(imei):
+    fet =datetime.now()
+    #part = fet.strftime('%d_%m_%Y')
+    part = fet.strftime('_%m_%Y')
+    colect ="TK_"+imei+part
+    return colect
+
+def bd_gene_2(imei):
+    fet =datetime.now()
+    #part = fet.strftime('%d_%m_%Y')
+    part = fet.strftime('_%m_%Y')
+    colect ="TUNEL_"+imei+part
+    return colect
+
+async def ultimo_control(imei ):
+    #vamos a buscar el ultimo control de la base de datos 
+    data_collection = collection(bd_gene_tk("control"))
+    dato = []
+    async for notificacion in data_collection.find({"imei":imei,"tipo":"1"},{"_id":0}).sort({"fecha_creacion":-1}).limit(1):
+        dato.append(notificacion)
+    #evaludar si el dato es valido 
+    if len(dato) > 0:
+        return dato[0]
+    else:
+        #buscar en la otra base de datos 
+        data_collection_1 = collection(bd_gene_2("control"))
+        async for notificacion in data_collection_1.find({"imei":imei,"tipo":"1"},{"_id":0}).sort({"fecha_creacion":-1}).limit(1):
+            dato.append(notificacion)
+        #evaludar si el dato es valido 
+        if len(dato) > 0:
+            return dato[0]
+        else:
+            return None
+
+async def ultimo_defrost(imei):
+    #vamos a buscar el ultimo control de la base de datos 
+    data_collection = collection(bd_gene_tk("control"))
+    dato = []
+    async for notificacion in data_collection.find({"imei":imei,"tipo":"8"},{"_id":0}).sort({"fecha_creacion":-1}).limit(1):
+        dato.append(notificacion)
+    #evaludar si el dato es valido 
+    if len(dato) > 0:
+        return dato[0]
+    else:
+        return None
+    #buscar en la otra base de datos 
+    data_collection_1 = collection(bd_gene_2("control"))
+    async for notificacion in data_collection_1.find({"imei":imei,"tipo":"8"},{"_id":0}).sort({"fecha_creacion":-1}).limit(1):
+        dato.append(notificacion)
+    #evaludar si el dato es valido 
+    if len(dato) > 0:
+        return dato[0]
+    else:
+        return None
+
+
 async def datos_totales(datos: dict) -> list:
     """Lista paginada de registros del dispositivo."""
     imei = datos.get("imei", "")

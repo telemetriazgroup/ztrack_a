@@ -13,6 +13,7 @@ from app.functions.device_queries import (
     _months_between,
     dispositivos_reporte_clasificado,
 )
+from app.functions.dashboard_equipos import obtener_catalogo_por_imeis
 from app.functions.live_helpers import _ultimo_live_un_imei
 
 
@@ -109,6 +110,15 @@ async def obtener_flota_dashboard(
         )
         by_imei = {d["imei"]: d for d in enriched}
         dispositivos = [by_imei.get(d["imei"], d) for d in dispositivos]
+
+    if dispositivos:
+        catalogo = await obtener_catalogo_por_imeis([d["imei"] for d in dispositivos])
+        for d in dispositivos:
+            cat = catalogo.get(d["imei"])
+            if cat:
+                d["numero_telemetria"] = cat.get("numero_telemetria") or ""
+                d["cliente"] = cat.get("cliente") or ""
+                d["catalogo"] = cat
 
     totales = report.get("totales") or {}
     return {

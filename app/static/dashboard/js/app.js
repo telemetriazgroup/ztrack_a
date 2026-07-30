@@ -20,6 +20,7 @@ const state = {
   tramaView: "json",
   decodeCache: {},
   currentTramaRaw: null,
+  equipoDirty: false,
 };
 
 const COMANDOS_PAGE_SIZE = 10;
@@ -98,7 +99,16 @@ function filteredDevices() {
   const { search, status } = getFilters();
   return state.dispositivos.filter((d) => {
     if (status !== "all" && d.status !== status) return false;
-    if (search && !(d.imei || "").toLowerCase().includes(search)) return false;
+    if (search) {
+      const hay = [
+        d.imei,
+        d.numero_telemetria,
+        d.cliente,
+      ]
+        .filter(Boolean)
+        .some((v) => String(v).toLowerCase().includes(search));
+      if (!hay) return false;
+    }
     return true;
   });
 }
@@ -176,6 +186,7 @@ function renderDeviceCards() {
       <span class="${badgeClass(d.status)}">${statusLabel(d.status)}</span>
       <div class="device-card-main">
         <p class="device-card-imei">${escapeHtml(d.imei)}</p>
+        <p class="device-card-meta">${escapeHtml(d.cliente || "Sin cliente")}${d.numero_telemetria ? ` · ${escapeHtml(d.numero_telemetria)}` : ""}</p>
         <p class="device-card-meta">${escapeHtml(formatUltimoDato(d))}</p>
         <p class="device-card-meta">IP: ${escapeHtml(d.last_ip || "—")} · ${d.secured ? "Seguro" : "Sin cifrar"}</p>
       </div>
@@ -197,7 +208,7 @@ function renderTable() {
 
   if (!list.length) {
     tbody.innerHTML =
-      '<tr><td colspan="6" class="empty">No hay dispositivos que coincidan con el filtro.</td></tr>';
+      '<tr><td colspan="8" class="empty">No hay dispositivos que coincidan con el filtro.</td></tr>';
     updateSearchUi(list);
     return;
   }
@@ -208,6 +219,8 @@ function renderTable() {
     <tr data-imei="${escapeAttr(d.imei)}" class="${d.imei === state.selectedImei ? "selected" : ""}">
       <td><span class="${badgeClass(d.status)}">${statusLabel(d.status)}</span></td>
       <td class="imei-cell">${escapeHtml(d.imei)}</td>
+      <td>${escapeHtml(d.numero_telemetria || "—")}</td>
+      <td>${escapeHtml(d.cliente || "—")}</td>
       <td>${escapeHtml(formatUltimoDato(d))}</td>
       <td>${escapeHtml(d.last_ip || "—")}</td>
       <td><span class="${d.secured ? "secured-yes" : "secured-no"}">${d.secured ? "Sí" : "No"}</span></td>
@@ -418,6 +431,135 @@ function renderTramaJson(trama) {
   $("#detailTrama").textContent = JSON.stringify(copy, null, 2);
 }
 
+function equipoResumenHistorial(snap) {
+  if (!snap) return "—";
+  if (snap.tipos) {
+    const tk = snap.tipos.TermoKing?.activo ? "TK" : "";
+    const tun = snap.tipos.Tunel?.activo ? "Tunel" : "";
+    return [tk, tun].filter(Boolean).join(" + ") || "Sin conexión";
+  }
+  const parts = [];
+  if (snap.numero_telemetria) parts.push(`Nº ${snap.numero_telemetria}`);
+  if (snap.cliente) parts.push(snap.cliente);
+  if (snap.notas) parts.push(`Notas: ${snap.notas}`);
+  return parts.length ? parts.join(" · ") : "—";
+}
+
+function renderEquipoTipos(catalogo) {
+  const el = $("#equipoTipos");
+  if (!el) return;
+  const tipos = catalogo?.tipos || {};
+  const chip = (t, label) => {
+    const on = tipos[t]?.activo;
+    const ult = tipos[t]?.ultima_conexion_display || "—";
+    return `<span class="tipo-chip ${on ? "tipo-on" : "tipo-off"}">${label}: ${on ? "inscrito" : "no"} · ${escapeHtml(ult)}</span>`;
+  };
+  el.innerHTML = chip("TermoKing", "TermoKing") + chip("Tunel", "Túnel");
+}
+
+function renderEquipoHistorial(items) {
+  const ul = $("#equipoHistorial");
+  if (!ul) return;
+  if (!items?.length) {
+    ul.innerHTML = '<li class="muted">Sin cambios registrados.</li>';
+    return;
+  }
+  ul.innerHTML = items
+    .map((h) => {
+      const ant = equipoResumenHistorial(h.anterior);
+      const neu = equipoResumenHistorial(h.nuevo);
+      return `<li class="equipo-historial-item">
+        <p class="historial-head">
+          <span class="historial-fecha">${escapeHtml(h.fecha_display || h.fecha || "—")}</span>
+          <span class="historial-motivo muted">${escapeHtml(h.motivo || "")}</span>
+          <span class="historial-user muted">${escapeHtml(h.user || "")}</span>
+        </p>
+        <p class="eq-hist-line"><span class="eq-hist-label">Antes:</span> ${escapeHtml(ant)}</p>
+        <p class="eq-hist-line"><span class="eq-hist-label">Nuevo:</span> ${escapeHtml(neu)}</p>
+      </li>`;
+    })
+    .join("");
+}
+
+function fillEquipoFicha(device) {
+  const cat = device?.catalogo;
+  $("#equipoImei").value = device?.imei || "";
+  if (!state.equipoDirty) {
+    $("#equipoNumero").value = cat?.numero_telemetria || device?.numero_telemetria || "";
+    $("#equipoCliente").value = cat?.cliente || device?.cliente || "";
+    $("#equipoNotas").value = cat?.notas || "";
+  }
+  renderEquipoTipos(cat);
+  const meta = $("#equipoMeta");
+  if (meta) {
+    meta.textContent = cat?.actualizado_display
+      ? `Guardado: ${cat.actualizado_display}${cat.user ? ` · ${cat.user}` : ""}`
+      : "Aún no inscrito en catálogo (se registrará al guardar o al recibir telemetría).";
+  }
+}
+
+async function loadEquipoFicha(imei) {
+  if (!imei) return;
+  try {
+    const res = await fetch(`${API_BASE}/api/dashboard/equipos/${encodeURIComponent(imei)}`);
+    if (res.status === 404) {
+      fillEquipoFicha({ imei, catalogo: null });
+      renderEquipoHistorial([]);
+      return;
+    }
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const dev = state.dispositivos.find((d) => d.imei === imei);
+    if (dev) {
+      dev.catalogo = data.equipo;
+      dev.numero_telemetria = data.equipo?.numero_telemetria || "";
+      dev.cliente = data.equipo?.cliente || "";
+    }
+    state.equipoDirty = false;
+    fillEquipoFicha({ imei, catalogo: data.equipo });
+    renderEquipoHistorial(data.historial || []);
+  } catch (e) {
+    console.error(e);
+    renderEquipoHistorial([]);
+  }
+}
+
+async function guardarEquipoFicha() {
+  const imei = state.selectedImei;
+  if (!imei) return;
+  const body = {
+    numero_telemetria: ($("#equipoNumero").value || "").trim(),
+    cliente: ($("#equipoCliente").value || "").trim(),
+    notas: ($("#equipoNotas").value || "").trim(),
+    user: "dashboard_panel",
+  };
+  $("#btnGuardarEquipo").disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/api/dashboard/equipos/${encodeURIComponent(imei)}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    state.equipoDirty = false;
+    const dev = state.dispositivos.find((d) => d.imei === imei);
+    if (dev && data.equipo) {
+      dev.catalogo = data.equipo;
+      dev.numero_telemetria = data.equipo.numero_telemetria || "";
+      dev.cliente = data.equipo.cliente || "";
+      renderDeviceLists();
+    }
+    fillEquipoFicha({ imei, catalogo: data.equipo });
+    renderEquipoHistorial(data.historial || []);
+    showToast(data.mensaje || "Ficha guardada", true);
+  } catch (e) {
+    showToast(`Error al guardar: ${e.message}`);
+  } finally {
+    $("#btnGuardarEquipo").disabled = false;
+  }
+}
+
 function renderDetail(device) {
   if (!device) {
     $("#detailPlaceholder").classList.remove("hidden");
@@ -445,6 +587,9 @@ function renderDetail(device) {
   renderTramaJson(device.ultima_trama);
 
   state.comandosPage = 1;
+  state.equipoDirty = false;
+  fillEquipoFicha(device);
+  loadEquipoFicha(device.imei);
   loadComandos(device.imei, 1);
 }
 
@@ -523,7 +668,7 @@ async function loadFlota() {
     console.error(e);
     showToast(`Error al cargar: ${e.message}`);
     $("#deviceTableBody").innerHTML =
-      '<tr><td colspan="6" class="empty">Error al conectar con la API.</td></tr>';
+      '<tr><td colspan="8" class="empty">Error al conectar con la API.</td></tr>';
     const cardList = $("#deviceCardList");
     if (cardList) {
       cardList.innerHTML =
@@ -630,6 +775,13 @@ function bindEvents() {
       setTramaView(view);
     });
   });
+
+  ["equipoNumero", "equipoCliente", "equipoNotas"].forEach((id) => {
+    $(`#${id}`)?.addEventListener("input", () => {
+      state.equipoDirty = true;
+    });
+  });
+  $("#btnGuardarEquipo")?.addEventListener("click", () => guardarEquipoFicha());
 
   document.addEventListener("keydown", (e) => {
     if (e.key === "r" && (e.metaKey || e.ctrlKey)) {

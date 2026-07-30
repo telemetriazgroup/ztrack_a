@@ -38,6 +38,8 @@ from app.functions.termoking import (
     dispositivos_reporte_termoking,
     buscar_live_decodificado,
     buscar_imei_decodificado,
+    ultimo_control,
+    ultimo_defrost,
 )
 from app.models.termoking import TermoKingSchema
 from app.models.common import (
@@ -56,6 +58,15 @@ from app.routes.telemetry_ingest import handle_telemetry_post
 
 router = APIRouter()
 _termoking_auth = make_progressive_auth(TermoKingSchema, "TermoKing")
+
+
+@router.get("/ultimo_control/{imei}", response_description="Último control.")
+async def ultimo_control_ok(imei: str):
+    return await ultimo_control(imei)
+
+@router.get("/ultimo_defrost/{imei}", response_description="Último defrost.")
+async def ultimo_defrost_ok(imei: str):
+    return await ultimo_defrost(imei)
 
 
 # ── RECEPCIÓN PRINCIPAL DE TELEMETRÍA ────────────────────────────────────────

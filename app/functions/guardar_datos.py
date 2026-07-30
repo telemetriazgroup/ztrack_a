@@ -24,6 +24,7 @@ from app.database.mongodb import (
     get_control_collection,
     get_dispositivos_collection,
 )
+from app.functions.dashboard_equipos import registrar_equipo_por_ingesta
 from app.functions.persist_trama import insert_trama_direct
 from app.services import redis_service
 
@@ -101,6 +102,7 @@ async def _sync_dispositivos(
         {"imei": imei, "estado": 1}, {"_id": 0}
     )
 
+    es_nuevo_en_mes = False
     if dispositivo_encontrado:
         update_fields = {"ultimo_dato": server_now()}
         if ip_clean:
@@ -126,6 +128,7 @@ async def _sync_dispositivos(
                 "secured": secured,
                 "api_key_hash": None,
             })
+            es_nuevo_en_mes = True
             DEVICE_AUTO_REGISTERED.labels(tipo=tipo).inc()
             col_name = bd_gene(imei, tipo)
             await crear_indices_coleccion_dispositivo(col_name)
@@ -133,6 +136,11 @@ async def _sync_dispositivos(
         except Exception as e:
             if "duplicate key" not in str(e).lower():
                 logger.error("Error al auto-registrar dispositivo", imei=imei, error=str(e))
+
+    try:
+        await registrar_equipo_por_ingesta(imei, tipo, es_nuevo_en_mes=es_nuevo_en_mes)
+    except Exception as e:
+        logger.warning("Catálogo dashboard no actualizado", imei=imei, tipo=tipo, error=str(e))
 
 
 async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:

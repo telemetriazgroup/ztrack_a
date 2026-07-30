@@ -23,6 +23,15 @@ def mock_redis_enqueue():
         yield
 
 
+@pytest.fixture(autouse=True)
+def mock_registrar_equipo_catalogo():
+    with patch(
+        "app.functions.guardar_datos.registrar_equipo_por_ingesta",
+        new=AsyncMock(),
+    ):
+        yield
+
+
 @pytest.fixture
 def mock_register_imei():
     with patch("app.services.redis_service.register_imei_tipo", new=AsyncMock()):

@@ -1,15 +1,22 @@
 """
 API REST para el panel web de monitoreo de flota.
 """
-from typing import Literal
+from typing import Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import RedirectResponse
+from pydantic import BaseModel, Field
 
 from app.functions.dashboard import (
     obtener_comandos_ejecutados_dispositivo,
     obtener_flota_dashboard,
     obtener_ultima_trama_dispositivo,
+)
+from app.functions.dashboard_equipos import (
+    guardar_equipo_catalogo,
+    listar_equipos_catalogo,
+    listar_historial_equipo,
+    obtener_equipo_catalogo,
 )
 from app.functions.decodificado_queries import _ultimo_oficial_for_imei
 from app.functions.trama_decoder import decode_trama
@@ -17,6 +24,13 @@ from app.functions.trama_decoder import decode_trama
 router = APIRouter(prefix="/api/dashboard", tags=["Dashboard"])
 
 TipoDispositivo = Literal["TermoKing", "Tunel"]
+
+
+class EquipoBody(BaseModel):
+    numero_telemetria: Optional[str] = Field(None, description="Número de unidad / telemetría")
+    cliente: Optional[str] = Field(None, description="Cliente o descripción del equipo")
+    notas: Optional[str] = Field(None, description="Notas adicionales")
+    user: Optional[str] = Field("dashboard_panel", description="Usuario que edita")
 
 
 @router.get("", include_in_schema=True)
@@ -43,6 +57,50 @@ async def flota(
         wait_h=wait_h,
         incluir_trama=incluir_trama,
     )
+
+
+@router.get("/equipos")
+async def listar_equipos(
+    buscar: Optional[str] = Query(None, description="IMEI, número telemetría o cliente"),
+    limite: int = Query(500, ge=1, le=2000),
+):
+    """Catálogo persistente de equipos inscritos (TK y/o Tunel)."""
+    equipos = await listar_equipos_catalogo(limite=limite, buscar=buscar)
+    return {"equipos": equipos, "total": len(equipos)}
+
+
+@router.get("/equipos/{imei}")
+async def obtener_equipo(imei: str):
+    if not imei.strip():
+        raise HTTPException(status_code=400, detail="IMEI vacío")
+    equipo = await obtener_equipo_catalogo(imei)
+    if not equipo:
+        raise HTTPException(status_code=404, detail="Equipo no inscrito en catálogo")
+    historial = await listar_historial_equipo(imei)
+    return {"equipo": equipo, "historial": historial}
+
+
+@router.get("/equipos/{imei}/historial")
+async def historial_equipo(imei: str, limite: int = Query(20, ge=1, le=100)):
+    if not imei.strip():
+        raise HTTPException(status_code=400, detail="IMEI vacío")
+    return {"imei": imei, "historial": await listar_historial_equipo(imei, limite=limite)}
+
+
+@router.put("/equipos/{imei}")
+async def actualizar_equipo(imei: str, body: EquipoBody):
+    if not imei.strip():
+        raise HTTPException(status_code=400, detail="IMEI vacío")
+    result = await guardar_equipo_catalogo(
+        imei,
+        numero_telemetria=body.numero_telemetria,
+        cliente=body.cliente,
+        notas=body.notas,
+        user=body.user or "dashboard_panel",
+    )
+    if not result.get("ok"):
+        raise HTTPException(status_code=400, detail=result.get("error", "Error al guardar"))
+    return result
 
 
 @router.get("/dispositivo/{imei}/ultima")

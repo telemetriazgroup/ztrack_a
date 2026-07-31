@@ -7,7 +7,7 @@ CAMBIOS vs. original:
   1. Se agrega lifespan para gestionar conexiones MongoDB y Redis
      (antes Motor creaba la conexión al importar database.py — frágil)
   2. Se mantienen los mismos routers y prefijos del original:
-       /TermoKing  y  /Tunel
+       /TermoKing, /Tunel y /Starcool
   3. Se agrega endpoint /health para monitoreo
   4. Se agrega endpoint /metrics para Prometheus/Grafana
   5. CORS idéntico al original (allow_origins=["*"])
@@ -109,7 +109,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="ZTRACK API",
-        summary="Sistema de telemetría IoT bidireccional — TermoKing y Túnel",
+        summary="Sistema de telemetría IoT bidireccional — TermoKing, Túnel y Starcool",
         version="2.0.0",
         lifespan=lifespan,
         # Documentación: ENABLE_DOCS=true o APP_ENV != production
@@ -130,11 +130,13 @@ def create_app() -> FastAPI:
     # ── Routers — mismos prefijos y tags del original ────────────────────────
     from app.routes.termoking import router as TermoKingRouter
     from app.routes.tunel import router as TunelRouter
+    from app.routes.starcool import router as StarcoolRouter
     from app.routes.dashboard_api import router as DashboardRouter
     from app.routes.cerro_prieto_api import router as CerroPrietoRouter
 
     app.include_router(TermoKingRouter, tags=["TermoKing"], prefix="/TermoKing")
     app.include_router(TunelRouter, tags=["Tunel"], prefix="/Tunel")
+    app.include_router(StarcoolRouter, tags=["Starcool"], prefix="/Starcool")
     app.include_router(DashboardRouter)
     app.include_router(CerroPrietoRouter)
 

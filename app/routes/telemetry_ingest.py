@@ -18,6 +18,7 @@ logger = get_logger(__name__)
 _MODULO_METRIC = {
     "TermoKing": "termoking",
     "Tunel": "tunel",
+    "Starcool": "starcool",
 }
 
 

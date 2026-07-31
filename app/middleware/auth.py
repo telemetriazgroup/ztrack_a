@@ -47,6 +47,9 @@ async def _find_device_record(imei: str, tipo: str) -> Optional[dict]:
     if device:
         return device
 
+    if tipo not in ("TermoKing", "Tunel"):
+        return None
+
     otro = "Tunel" if tipo == "TermoKing" else "TermoKing"
     col_otro = get_dispositivos_collection(otro)
     return await col_otro.find_one({"imei": imei, "estado": 1}, {"_id": 0})

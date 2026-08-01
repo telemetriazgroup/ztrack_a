@@ -107,20 +107,25 @@ def collection(name: str):
 
 def _mes_anio(dt: Optional[Any] = None) -> tuple[str, str]:
     """
-    Retorna (mes, año) para el datetime dado o el actual.
-    Acepta datetime o string ISO (viene de Redis/JSON tras serialización).
+    Retorna (mes, año) para el datetime dado o el actual en APP_TIMEZONE (GMT-5).
+
+    IMPORTANTE: no usar datetime.now() del SO/contenedor (suele ser UTC).
+    Las colecciones mensuales (TK_control_MM_YYYY, etc.) deben alinearse con
+    server_now(), igual que fecha_creacion y received_at.
     """
+    from app.core.datetime_utils import server_now
+
     if dt is None:
-        d = datetime.now()
+        d = server_now()
     elif isinstance(dt, datetime):
         d = dt
     elif isinstance(dt, str):
         try:
             d = datetime.fromisoformat(dt.replace("Z", "+00:00"))
         except (ValueError, TypeError):
-            d = datetime.now()
+            d = server_now()
     else:
-        d = datetime.now()
+        d = server_now()
     return d.strftime("%m"), d.strftime("%Y")
 
 

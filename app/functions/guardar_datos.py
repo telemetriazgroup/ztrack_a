@@ -144,47 +144,66 @@ async def _sync_dispositivos(
         logger.warning("Catálogo dashboard no actualizado", imei=imei, tipo=tipo, error=str(e))
 
 
+def _meses_control_a_consultar(ref: datetime) -> list[datetime]:
+    """
+    Mes actual (GMT-5) y el anterior, para despacho de comandos en cambio de mes.
+    Usa día 15 para construir un datetime dentro del mes (nombre de colección).
+    """
+    meses = [ref]
+    y, m = ref.year, ref.month
+    if m == 1:
+        meses.append(ref.replace(year=y - 1, month=12, day=15))
+    else:
+        meses.append(ref.replace(month=m - 1, day=15))
+    return meses
+
+
 async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:
     """
     Despacho atómico: find_one_and_update evita doble entrega con varios workers.
+    Busca en la colección del mes actual (GMT-5) y, si no hay, en la del mes anterior.
     """
     modulo = _MODULO_METRIC.get(tipo, "termoking")
-    control_col = get_control_collection(tipo)
     now = server_now()
 
     try:
-        control_encontrado = await control_col.find_one_and_update(
-            {"imei": imei, "estado": {"$gt": 0}},
-            {
-                "$inc": {"estado": -1},
-                "$set": {
-                    "status": 2,
-                    "fecha_ejecucion": now,
+        for ref_mes in _meses_control_a_consultar(now):
+            control_col = get_control_collection(tipo, ref_mes)
+            control_encontrado = await control_col.find_one_and_update(
+                {"imei": imei, "estado": {"$gt": 0}},
+                {
+                    "$inc": {"estado": -1},
+                    "$set": {
+                        "status": 2,
+                        "fecha_ejecucion": now,
+                    },
                 },
-            },
-            return_document=ReturnDocument.BEFORE,
-            projection={"_id": 0, "comando": 1, "estado": 1},
-        )
+                return_document=ReturnDocument.BEFORE,
+                projection={"_id": 0, "comando": 1, "estado": 1},
+            )
 
-        if not control_encontrado:
-            return "sin comandos pendientes"
+            if not control_encontrado:
+                continue
 
-        comando = control_encontrado.get("comando") or "sin comandos pendientes"
-        if not comando or comando == "sin comandos pendientes":
-            return "sin comandos pendientes"
+            comando = control_encontrado.get("comando") or "sin comandos pendientes"
+            if not comando or comando == "sin comandos pendientes":
+                continue
 
-        estado_antes = control_encontrado.get("estado", 1)
-        intentos_restantes = max(estado_antes - 1, 0)
+            estado_antes = int(control_encontrado.get("estado") or 1)
+            intentos_restantes = max(estado_antes - 1, 0)
 
-        CONTROL_COMMANDS_DISPATCHED.labels(modulo=modulo).inc()
-        logger.info(
-            "Comando despachado",
-            imei=imei,
-            comando=comando,
-            intentos_restantes=intentos_restantes,
-            tipo=tipo,
-        )
-        return comando
+            CONTROL_COMMANDS_DISPATCHED.labels(modulo=modulo).inc()
+            logger.info(
+                "Comando despachado",
+                imei=imei,
+                comando=comando,
+                intentos_restantes=intentos_restantes,
+                tipo=tipo,
+                coleccion=control_col.name,
+            )
+            return comando
+
+        return "sin comandos pendientes"
 
     except Exception as e:
         logger.error("Error al consultar comandos", imei=imei, error=str(e))

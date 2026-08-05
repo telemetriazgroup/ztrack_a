@@ -37,7 +37,7 @@ from app.database.mongodb import (
     get_dispositivos_collection,
     guardar_evento_telemetria,
 )
-from app.functions.guardar_datos import guardar_datos
+from app.functions.guardar_datos import guardar_datos, preparar_comando_para_insert
 from app.functions.decodificado_queries import (
     buscar_decodificado_imei_rango,
     buscar_live_oficial_parcial,
@@ -71,13 +71,11 @@ async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
 async def insertar_comando(datos: dict) -> dict:
     """
     Inserta un comando de control en TK_control_MM_YYYY.
-    El comando se retorna al dispositivo en la próxima llamada POST.
+    Solo estado=1 será despachado en el próximo POST del IMEI.
     """
     control_col = get_control_collection("TermoKing")
+    datos = preparar_comando_para_insert(datos)
     datos["fecha_creacion"] = server_now()
-    if not datos.get("fecha_ejecucion"):
-        datos["fecha_ejecucion"] = None
-
     result = await control_col.insert_one(datos)
     nuevo = await control_col.find_one({"_id": result.inserted_id}, {"_id": 0})
     return nuevo or {}

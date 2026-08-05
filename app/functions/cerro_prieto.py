@@ -10,6 +10,7 @@ from typing import Any, Optional
 from app.core.datetime_utils import format_for_display, server_now, timezone_label
 from app.database.mongodb import collection, get_control_collection
 from app.functions.dashboard import _serialize_comando, _serialize_dt
+from app.functions.guardar_datos import COMANDO_ESTADO_CANCELADO, COMANDO_ESTADO_PENDIENTE
 from app.functions.live_helpers import _ultimo_live_un_imei
 from app.functions.termoking import insertar_comando
 
@@ -525,7 +526,7 @@ def starcool_bloques_desde_d02(d02_data: dict[str, Any]) -> list[dict[str, Any]]
 
 
 def _comando_ui(doc: Optional[dict]) -> dict[str, Any]:
-    """estado UI: 1 pendiente, 0 ejecutado (según lógica del cliente)."""
+    """estado UI: 1 pendiente, 0 ejecutado, 3 cancelado."""
     if not doc:
         return {
             "hay_comando": False,
@@ -533,18 +534,30 @@ def _comando_ui(doc: Optional[dict]) -> dict[str, Any]:
             "estado": None,
             "estado_etiqueta": "Sin comandos recientes",
             "pendiente": False,
+            "cancelado": False,
         }
-    estado_int = int(doc.get("estado") or 0)
+    estado_int = int(doc.get("estado") if doc.get("estado") is not None else -1)
     status = int(doc.get("status") or 1)
-    pendiente = estado_int > 0 and status != 2
+    cancelado = estado_int == COMANDO_ESTADO_CANCELADO
+    pendiente = estado_int == COMANDO_ESTADO_PENDIENTE and status != 2
+    if cancelado:
+        etiqueta = "Cancelado"
+        estado_ui = COMANDO_ESTADO_CANCELADO
+    elif pendiente:
+        etiqueta = "Pendiente"
+        estado_ui = 1
+    else:
+        etiqueta = "Ejecutado"
+        estado_ui = 0
     return {
         "hay_comando": True,
         "comando": doc.get("comando"),
-        "estado": 1 if pendiente else 0,
-        "estado_etiqueta": "Pendiente" if pendiente else "Ejecutado",
+        "estado": estado_ui,
+        "estado_etiqueta": etiqueta,
         "pendiente": pendiente,
+        "cancelado": cancelado,
         "status": status,
-        "estado_intentos": estado_int,
+        "estado_raw": estado_int,
         "fecha_creacion": _serialize_dt(doc.get("fecha_creacion")),
         "fecha_creacion_display": format_for_display(
             doc.get("fecha_creacion"), with_timezone=False
@@ -587,14 +600,14 @@ async def _buscar_comandos_recientes(dias: int = 30, limite: int = 20) -> list[d
 
 
 async def _ultimo_comando_cola() -> Optional[dict]:
-    """Último comando pendiente en cola (estado > 0)."""
+    """Último comando pendiente en cola (estado = 1)."""
     now = server_now()
     now_naive = now.replace(tzinfo=None) if now.tzinfo else now
     y, m = now_naive.year, now_naive.month
     for _ in range(3):
         col = get_control_collection(CERRO_PRIETO_TIPO, datetime(y, m, 1))
         doc = await col.find_one(
-            {"imei": CERRO_PRIETO_IMEI, "estado": {"$gt": 0}},
+            {"imei": CERRO_PRIETO_IMEI, "estado": COMANDO_ESTADO_PENDIENTE},
             {"_id": 0},
             sort=[("fecha_creacion", -1)],
         )

@@ -47,7 +47,8 @@ function escapeHtml(s) {
 }
 
 function comandoPendiente(c) {
-  return (c.estado ?? 0) > 0 && c.status !== 2;
+  if (c.cancelado) return false;
+  return (c.estado ?? 0) === 1 && c.status !== 2;
 }
 
 function badgeHtml(pendiente, estadoNum) {

@@ -21,7 +21,11 @@ from pydantic import BaseModel, Field
 class ComandoSchema(BaseModel):
     """
     Esquema para insertar comandos de control a un dispositivo.
-    El campo 'estado' actúa como contador de intentos restantes.
+
+    estado en *_control_*:
+      1 = pendiente de envío al equipo
+      0 = ya despachado (ejecutado)
+      3 = cancelado (no se envía)
     """
     imei: str = Field(...)
     estado: Optional[int] = 1

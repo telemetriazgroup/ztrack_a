@@ -10,7 +10,7 @@ from typing import Any, Optional
 from app.core.datetime_utils import server_now
 from app.core.logging import get_logger
 from app.database.mongodb import bd_gene, collection, get_control_collection
-from app.functions.guardar_datos import guardar_datos
+from app.functions.guardar_datos import guardar_datos, preparar_comando_para_insert
 from app.functions.decodificado_queries import (
     buscar_decodificado_imei_rango,
     buscar_live_oficial_parcial,
@@ -30,15 +30,25 @@ _TIPO = "Tunel"
 
 
 async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
-    """Entry point del POST /Tunel/. Delega a guardar_datos() con tipo="Tunel"."""
+    """
+    Entry point del POST /Tunel/.
+    Delega a guardar_datos() con tipo="Tunel".
+
+    Despacho de comandos (TUNEL_control_MM_YYYY):
+      - estado 1 = pendiente → se envía al equipo en el POST y pasa a 0
+      - estado 3 = cancelado → no se envía
+    """
     return await guardar_datos(ztrack_data, secured=secured, tipo_dispositivo="Tunel")
 
 
 async def insertar_comando(datos: dict) -> dict:
+    """
+    Inserta un comando en TUNEL_control_MM_YYYY (mes GMT-5).
+    Solo estado=1 será despachado en el próximo POST del IMEI.
+    """
     control_col = get_control_collection("Tunel")
+    datos = preparar_comando_para_insert(datos)
     datos["fecha_creacion"] = server_now()
-    if not datos.get("fecha_ejecucion"):
-        datos["fecha_ejecucion"] = None
     result = await control_col.insert_one(datos)
     nuevo = await control_col.find_one({"_id": result.inserted_id}, {"_id": 0})
     return nuevo or {}

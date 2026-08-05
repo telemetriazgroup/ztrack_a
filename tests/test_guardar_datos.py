@@ -156,7 +156,7 @@ class TestComandos:
         assert resultado == "Trama_Readout(3)"
 
     @pytest.mark.asyncio
-    async def test_comando_decrementa_estado_atomicamente(
+    async def test_comando_marca_ejecutado_atomicamente(
         self, mock_dispositivos_col, mock_control_col, mock_register_imei
     ):
         mock_dispositivos_col.find_one = AsyncMock(
@@ -169,17 +169,36 @@ class TestComandos:
         })
         with patch("app.functions.guardar_datos.get_dispositivos_collection", return_value=mock_dispositivos_col):
             with patch("app.functions.guardar_datos.get_control_collection", return_value=mock_control_col):
-                from app.functions.guardar_datos import guardar_datos
+                from app.functions.guardar_datos import guardar_datos, COMANDO_ESTADO_EJECUTADO, COMANDO_ESTADO_PENDIENTE
                 await guardar_datos(DOCUMENT)
 
         mock_control_col.find_one_and_update.assert_called_once()
+        filtro = mock_control_col.find_one_and_update.call_args[0][0]
+        assert filtro["estado"] == COMANDO_ESTADO_PENDIENTE
         update_doc = mock_control_col.find_one_and_update.call_args[0][1]
-        assert update_doc["$inc"] == {"estado": -1}
+        assert update_doc["$set"]["estado"] == COMANDO_ESTADO_EJECUTADO
         assert update_doc["$set"]["status"] == 2
         assert "fecha_ejecucion" in update_doc["$set"]
 
     @pytest.mark.asyncio
-    async def test_comando_con_multiples_intentos(
+    async def test_comando_cancelado_no_se_despacha(
+        self, mock_dispositivos_col, mock_control_col, mock_register_imei
+    ):
+        mock_dispositivos_col.find_one = AsyncMock(
+            return_value={"imei": "860389053784506", "estado": 1}
+        )
+        mock_control_col.find_one_and_update = AsyncMock(return_value=None)
+        with patch("app.functions.guardar_datos.get_dispositivos_collection", return_value=mock_dispositivos_col):
+            with patch("app.functions.guardar_datos.get_control_collection", return_value=mock_control_col):
+                from app.functions.guardar_datos import guardar_datos, COMANDO_ESTADO_PENDIENTE
+                resultado = await guardar_datos(DOCUMENT)
+
+        assert resultado == "sin comandos pendientes"
+        filtro = mock_control_col.find_one_and_update.call_args[0][0]
+        assert filtro["estado"] == COMANDO_ESTADO_PENDIENTE
+
+    @pytest.mark.asyncio
+    async def test_comando_tunel_misma_logica_estado_pendiente(
         self, mock_dispositivos_col, mock_control_col, mock_register_imei
     ):
         mock_dispositivos_col.find_one = AsyncMock(
@@ -187,15 +206,17 @@ class TestComandos:
         )
         mock_control_col.find_one_and_update = AsyncMock(return_value={
             "imei": "860389053784506",
-            "comando": "Trama_Readout(3)",
-            "estado": 3,
+            "comando": "PANTALLA:TEST*",
+            "estado": 1,
         })
         with patch("app.functions.guardar_datos.get_dispositivos_collection", return_value=mock_dispositivos_col):
             with patch("app.functions.guardar_datos.get_control_collection", return_value=mock_control_col):
-                from app.functions.guardar_datos import guardar_datos
-                resultado = await guardar_datos(DOCUMENT)
+                from app.functions.guardar_datos import guardar_datos, COMANDO_ESTADO_PENDIENTE
+                resultado = await guardar_datos(DOCUMENT, tipo_dispositivo="Tunel")
 
-        assert resultado == "Trama_Readout(3)"
+        assert resultado == "PANTALLA:TEST*"
+        filtro = mock_control_col.find_one_and_update.call_args[0][0]
+        assert filtro["estado"] == COMANDO_ESTADO_PENDIENTE
 
     @pytest.mark.asyncio
     async def test_imei_vacio_retorna_sin_comandos(self):

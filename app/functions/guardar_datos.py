@@ -37,6 +37,25 @@ _MODULO_METRIC = {
     "Starcool": "starcool",
 }
 
+# Estados del documento de comando en *_control_MM_YYYY
+COMANDO_ESTADO_EJECUTADO = 0
+COMANDO_ESTADO_PENDIENTE = 1
+COMANDO_ESTADO_CANCELADO = 3
+
+
+def preparar_comando_para_insert(datos: dict) -> dict:
+    """
+    Normaliza documento al encolar en *_control_MM_YYYY.
+    estado: 1 pendiente (default), 3 cancelado, 0 solo tras despacho.
+    """
+    if datos.get("estado") is None:
+        datos["estado"] = COMANDO_ESTADO_PENDIENTE
+    if datos.get("status") is None:
+        datos["status"] = 1
+    if not datos.get("fecha_ejecucion"):
+        datos["fecha_ejecucion"] = None
+    return datos
+
 
 async def guardar_datos(
     ztrack_data: dict,
@@ -162,6 +181,7 @@ def _meses_control_a_consultar(ref: datetime) -> list[datetime]:
 async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:
     """
     Despacho atómico: find_one_and_update evita doble entrega con varios workers.
+    Solo despacha comandos con estado=1 (pendiente). estado=3 es cancelado y se ignora.
     Busca en la colección del mes actual (GMT-5) y, si no hay, en la del mes anterior.
     """
     modulo = _MODULO_METRIC.get(tipo, "termoking")
@@ -171,10 +191,10 @@ async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:
         for ref_mes in _meses_control_a_consultar(now):
             control_col = get_control_collection(tipo, ref_mes)
             control_encontrado = await control_col.find_one_and_update(
-                {"imei": imei, "estado": {"$gt": 0}},
+                {"imei": imei, "estado": COMANDO_ESTADO_PENDIENTE},
                 {
-                    "$inc": {"estado": -1},
                     "$set": {
+                        "estado": COMANDO_ESTADO_EJECUTADO,
                         "status": 2,
                         "fecha_ejecucion": now,
                     },
@@ -190,15 +210,11 @@ async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:
             if not comando or comando == "sin comandos pendientes":
                 continue
 
-            estado_antes = int(control_encontrado.get("estado") or 1)
-            intentos_restantes = max(estado_antes - 1, 0)
-
             CONTROL_COMMANDS_DISPATCHED.labels(modulo=modulo).inc()
             logger.info(
                 "Comando despachado",
                 imei=imei,
                 comando=comando,
-                intentos_restantes=intentos_restantes,
                 tipo=tipo,
                 coleccion=control_col.name,
             )

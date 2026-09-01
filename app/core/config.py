@@ -73,6 +73,18 @@ class Settings(BaseSettings):
     metrics_enabled: bool = True
     metrics_path: str = "/metrics"
 
+    # Reenvío fire-and-forget de POST /Generador|/generadores → servidor remoto
+    generador_forward_enabled: bool = Field(
+        default=True, validation_alias="GENERADOR_FORWARD_ENABLED"
+    )
+    generador_forward_url: str = Field(
+        default="http://161.132.53.51:9006/generadores/",
+        validation_alias="GENERADOR_FORWARD_URL",
+    )
+    generador_forward_timeout_seconds: float = Field(
+        default=3.0, validation_alias="GENERADOR_FORWARD_TIMEOUT_SECONDS"
+    )
+
     @property
     def is_production(self) -> bool:
         return self.app_env == "production"

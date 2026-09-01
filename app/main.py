@@ -97,6 +97,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
 
+    from app.services.generador_forward import close_generador_forward_client
+
+    await close_generador_forward_client()
     await redis_service.disconnect()
     await mongodb.disconnect()
     logger.info("Shutdown completo")
@@ -137,6 +140,12 @@ def create_app() -> FastAPI:
     app.include_router(DatosRouter, tags=["Datos"], prefix="/Datos")
     app.include_router(StarcoolRouter, tags=["Starcool"], prefix="/Starcool")
     app.include_router(GeneradorRouter, tags=["Generador"], prefix="/Generador")
+    app.include_router(
+        GeneradorRouter,
+        tags=["Generador"],
+        prefix="/generadores",
+        include_in_schema=False,
+    )
 
     # ── Root — idéntico al original ──────────────────────────────────────────
     @app.get("/", tags=["Root"])

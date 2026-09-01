@@ -30,6 +30,7 @@ from app.models.generador import (
 )
 from app.models.common import ResponseModel, BusquedaSchema, ComandoSchema
 from app.middleware.auth import progressive_auth
+from app.services.generador_forward import programar_reenvio_generador
 
 router = APIRouter()
 
@@ -40,6 +41,7 @@ async def add_data(
     device=Depends(progressive_auth),
 ):
     """Recepción de telemetría Generador (G_{imei}_MM_YYYY)."""
+    programar_reenvio_generador(datos.model_dump(mode="json"))
     received_at = server_now()
     doc = datos.to_mongo_document(received_at=received_at, secured=device.secured)
     comando = await Guardar_Datos(doc, secured=device.secured)

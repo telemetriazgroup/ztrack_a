@@ -78,7 +78,7 @@ class Settings(BaseSettings):
         default=True, validation_alias="GENERADOR_FORWARD_ENABLED"
     )
     generador_forward_url: str = Field(
-        default="http://161.132.53.51:9006/generadores/",
+        default="http://161.132.53.51:9006/generadores/ingesta/",
         validation_alias="GENERADOR_FORWARD_URL",
     )
     generador_forward_timeout_seconds: float = Field(

@@ -24,6 +24,8 @@ const state = {
     o2: { ...OBJETIVOS_DEFAULT.o2 },
   },
   objetivosDirty: false,
+  view: "vivo",
+  historicoCargado: false,
 };
 
 const $ = (sel) => document.querySelector(sel);
@@ -185,10 +187,16 @@ function renderHistorialObjetivos(items) {
     .map((h) => {
       const ant = objetivosResumenTexto(h.anterior);
       const neu = objetivosResumenTexto(h.nuevo);
+      const motivo =
+        h.motivo === "aplicar"
+          ? "Enviado al equipo"
+          : h.motivo === "guardar"
+            ? "Solo guardado"
+            : h.motivo || "";
       return `<li class="objetivos-historial-item">
         <p class="historial-head">
           <span class="historial-fecha">${escapeHtml(h.fecha_display || h.fecha || "—")}</span>
-          <span class="historial-user muted">${escapeHtml(h.user || "")}</span>
+          <span class="historial-user muted">${escapeHtml([motivo, h.user].filter(Boolean).join(" · "))}</span>
         </p>
         <p class="obj-hist-line"><span class="obj-hist-label">Antes:</span> ${escapeHtml(ant)}</p>
         <p class="obj-hist-line"><span class="obj-hist-label">Nuevo:</span> ${escapeHtml(neu)}</p>
@@ -208,22 +216,58 @@ function evaluarLocal(valor, objetivo) {
   return { estado, desviacion: Math.round(diff * 100) / 100, objetivo };
 }
 
-function sensorCellHtml(label, valor, meta) {
+function esReinicioLectura(valor) {
+  if (typeof valor !== "number" || Number.isNaN(valor)) return false;
+  return Math.abs(valor) < 1e-9 || Math.abs(valor - 25.5) < 1e-6;
+}
+
+function fmtPct(valor) {
+  const n = Math.round(Number(valor) * 10) / 10;
+  if (!Number.isFinite(n)) return "—";
+  return Number.isInteger(n) ? String(n) : n.toFixed(1);
+}
+
+function valorMostrable(entry) {
+  if (!entry) return null;
+  const valor = entry.valor;
+  if (typeof valor !== "number" || Number.isNaN(valor) || esReinicioLectura(valor)) return null;
+  return valor;
+}
+
+function tendenciaHtml(tendencia) {
+  if (tendencia === "sube") {
+    return '<span class="tendencia tendencia-sube" title="Subiendo" aria-label="subiendo">↑</span>';
+  }
+  if (tendencia === "baja") {
+    return '<span class="tendencia tendencia-baja" title="Bajando" aria-label="bajando">↓</span>';
+  }
+  return "";
+}
+
+function sensorCellHtml(label, entry) {
+  const meta = entryMeta(entry);
+  const valor = valorMostrable(entry);
   const cls = meta.estado && meta.estado !== "none" ? `sensor-${meta.estado}` : "";
   const objTxt =
     meta.objetivo != null
       ? `<span class="sensor-obj">Obj: ${escapeHtml(meta.objetivo)}%</span>`
       : "";
   const desvTxt =
-    meta.desviacion != null
+    valor != null && meta.desviacion != null
       ? `<span class="sensor-desv">Δ ${escapeHtml(meta.desviacion)}%</span>`
       : "";
-  const valDisplay = typeof valor === "number" ? valor : "—";
+  const nota = entry?.reinicio
+    ? `<span class="sensor-reinicio">Último válido${
+        entry.fecha_valida_display ? ` · ${escapeHtml(entry.fecha_valida_display)}` : ""
+      } · reinicio</span>`
+    : "";
+  const mostrado = valor == null ? "—" : `${fmtPct(valor)}%`;
   return `<div class="sensor-cell ${cls}">
       <span class="sensor-label">${escapeHtml(label)}</span>
-      <strong class="sensor-valor">${escapeHtml(valDisplay)}${typeof valor === "number" ? "%" : ""}</strong>
+      <strong class="sensor-valor">${mostrado}${tendenciaHtml(entry?.tendencia)}</strong>
       ${objTxt}
       ${desvTxt}
+      ${nota}
     </div>`;
 }
 
@@ -232,13 +276,23 @@ function entryMeta(entry) {
     return { estado: "none", desviacion: null, objetivo: null };
   }
   const z = entry.zona;
-  if (entry.tipo === "co2") return evaluarLocal(entry.valor, state.objetivos.co2[z]);
-  if (entry.tipo === "o2") return evaluarLocal(entry.valor, state.objetivos.o2[z]);
+  const valor = valorMostrable(entry);
+  if (entry.tipo === "co2") return evaluarLocal(valor, state.objetivos.co2[z]);
+  if (entry.tipo === "o2") return evaluarLocal(valor, state.objetivos.o2[z]);
   return {
     estado: entry.estado || "none",
     desviacion: entry.desviacion ?? null,
     objetivo: entry.objetivo ?? null,
   };
+}
+
+function controlBadgeHtml(control, zona) {
+  const estadoN = { 1: 11, 2: 12, 3: 13 }[zona];
+  const activo = control?.activo;
+  const cls = activo === true ? "control-on" : activo === false ? "control-off" : "control-unknown";
+  const label = control?.etiqueta || "Sin dato de control";
+  const title = `Estado ${estadoN}: ${control?.valor ?? "—"} · 1 = activo`;
+  return `<span class="control-badge ${cls}" title="${escapeHtml(title)}">${escapeHtml(label)}</span>`;
 }
 
 function renderD02ZonasHtml(porZona, compact) {
@@ -253,8 +307,9 @@ function renderD02ZonasHtml(porZona, compact) {
         const o2 = row.o2 || {};
         return `<div class="modal-zona-row">
           <span class="modal-zona-label">Z${z}</span>
-          ${sensorCellHtml("CO₂", co2.valor, entryMeta(co2))}
-          ${sensorCellHtml("O₂", o2.valor, entryMeta(o2))}
+          ${controlBadgeHtml(row.control, z)}
+          ${sensorCellHtml("CO₂", co2)}
+          ${sensorCellHtml("O₂", o2)}
         </div>`;
       })
       .join("");
@@ -265,10 +320,13 @@ function renderD02ZonasHtml(porZona, compact) {
       const co2 = row.co2 || {};
       const o2 = row.o2 || {};
       return `<article class="zona-card">
-        <h3 class="zona-title">Zona ${z}</h3>
+        <header class="zona-head">
+          <h3 class="zona-title">Zona ${z}</h3>
+          ${controlBadgeHtml(row.control, z)}
+        </header>
         <div class="zona-sensors">
-          ${sensorCellHtml("CO₂", co2.valor, entryMeta(co2))}
-          ${sensorCellHtml("O₂", o2.valor, entryMeta(o2))}
+          ${sensorCellHtml("CO₂", co2)}
+          ${sensorCellHtml("O₂", o2)}
         </div>
       </article>`;
     })
@@ -527,12 +585,72 @@ function onObjetivosInputChange() {
   }
 }
 
-async function aplicarObjetivos() {
+function objetivosBody() {
   const obj = getObjetivosFromInputs();
   const body = {
     co2: { 1: obj.co2[1], 2: obj.co2[2], 3: obj.co2[3] },
     o2: { 1: obj.o2[1], 2: obj.o2[2], 3: obj.o2[3] },
   };
+  const nums = [...Object.values(body.co2), ...Object.values(body.o2)];
+  if (nums.some((n) => !Number.isFinite(n) || n < 0 || n > 100)) {
+    throw new Error("Cada objetivo debe ser un número entre 0 y 100");
+  }
+  return body;
+}
+
+function aplicarRespuestaObjetivos(data) {
+  if (data.objetivos) {
+    syncObjetivosFromApi({ objetivos: data.objetivos }, true);
+    if (state.data) {
+      state.data.objetivos = data.objetivos;
+      state.data.objetivos_historial = data.objetivos_historial || state.data.objetivos_historial;
+      renderD02(state.data);
+    }
+  }
+  if (data.objetivos_historial) {
+    renderHistorialObjetivos(data.objetivos_historial);
+  }
+}
+
+async function guardarObjetivos() {
+  let body;
+  try {
+    body = objetivosBody();
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+  const btn = $("#btnGuardarObjetivos");
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(`${API}/objetivos`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    aplicarRespuestaObjetivos(data);
+    showToast(data.mensaje || "Objetivos guardados", true);
+  } catch (e) {
+    showToast(`Error: ${e.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function aplicarObjetivos() {
+  let body;
+  try {
+    body = objetivosBody();
+  } catch (e) {
+    showToast(e.message);
+    return;
+  }
+  const confirmar = window.confirm(
+    "Se encolarán 6 comandos de objetivo CO₂ y O₂ al equipo. ¿Enviar?"
+  );
+  if (!confirmar) return;
 
   $("#btnAplicarObjetivos").disabled = true;
   try {
@@ -554,18 +672,8 @@ async function aplicarObjetivos() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-    if (data.objetivos) {
-      syncObjetivosFromApi({ objetivos: data.objetivos }, true);
-      if (state.data) {
-        state.data.objetivos = data.objetivos;
-        state.data.objetivos_historial = data.objetivos_historial || state.data.objetivos_historial;
-        renderD02(state.data);
-      }
-    }
-    if (data.objetivos_historial) {
-      renderHistorialObjetivos(data.objetivos_historial);
-    }
-    showToast(data.mensaje || "Objetivos guardados", true);
+    aplicarRespuestaObjetivos(data);
+    showToast(data.mensaje || "Objetivos enviados al equipo", true);
     await loadEstado();
     $("#verificacionSection")?.scrollIntoView({ behavior: "smooth", block: "start" });
   } catch (e) {
@@ -710,7 +818,7 @@ function setPanelOpen(kind, open) {
   } else {
     btn.querySelector(".toggle-label").textContent = open
       ? "Ocultar objetivos"
-      : "Modificar objetivos CO₂ / O₂";
+      : "Objetivos CO₂ / O₂";
   }
 }
 
@@ -834,6 +942,120 @@ async function loadEstado() {
   }
 }
 
+function isoFecha(d) {
+  const z = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`;
+}
+
+function initHistoricoFechas() {
+  const hasta = new Date();
+  const desde = new Date();
+  desde.setDate(hasta.getDate() - 1);
+  const elDesde = $("#histDesde");
+  const elHasta = $("#histHasta");
+  if (elDesde && !elDesde.value) elDesde.value = isoFecha(desde);
+  if (elHasta && !elHasta.value) elHasta.value = isoFecha(hasta);
+}
+
+function setView(name) {
+  state.view = name === "historico" ? "historico" : "vivo";
+  $("#viewVivo")?.classList.toggle("hidden", state.view !== "vivo");
+  $("#viewHistorico")?.classList.toggle("hidden", state.view !== "historico");
+  document.querySelectorAll(".view-tab").forEach((btn) => {
+    const on = btn.dataset.view === state.view;
+    btn.classList.toggle("active", on);
+    btn.setAttribute("aria-selected", on ? "true" : "false");
+  });
+  if (state.view === "historico" && !state.historicoCargado) {
+    cargarHistorico();
+  }
+}
+
+function histCelda(entry) {
+  const valor = valorMostrable(entry);
+  const texto = valor == null ? "—" : `${fmtPct(valor)}%`;
+  const flecha =
+    entry?.tendencia === "sube" ? " ↑" : entry?.tendencia === "baja" ? " ↓" : "";
+  const marca = entry?.reinicio ? '<small class="hist-reinicio">reinicio</small>' : "";
+  return `<span class="hist-val">${escapeHtml(texto)}${flecha}</span>${marca}`;
+}
+
+function renderHistoricoTabla(data) {
+  const wrap = $("#historicoTableWrap");
+  const resumen = $("#historicoResumen");
+  if (!wrap) return;
+  const filas = data?.lecturas || [];
+  const extra = data?.truncado ? ` Se muestran las ${data.limite} más recientes.` : "";
+  if (resumen) {
+    resumen.textContent = filas.length
+      ? `${filas.length} lecturas entre ${data.desde} y ${data.hasta}.${extra}`
+      : `Sin lecturas entre ${data?.desde || "—"} y ${data?.hasta || "—"}.`;
+  }
+  if (!filas.length) {
+    wrap.innerHTML = '<p class="muted">No hay tramas con CO₂ / O₂ en ese rango.</p>';
+    return;
+  }
+  const body = [...filas]
+    .reverse()
+    .map((row) => {
+      const porZona = {};
+      (row.zonas || []).forEach((z) => {
+        porZona[z.zona] = z;
+      });
+      const celdas = [1, 2, 3]
+        .map((z) => {
+          const item = porZona[z] || {};
+          return `<td>${histCelda(item.co2)}</td><td>${histCelda(item.o2)}</td>`;
+        })
+        .join("");
+      return `<tr><th scope="row">${escapeHtml(row.fecha_display || row.fecha || "—")}</th>${celdas}</tr>`;
+    })
+    .join("");
+  wrap.innerHTML = `<table class="historico-table">
+      <thead>
+        <tr>
+          <th>Fecha</th>
+          <th>Z1 CO₂</th><th>Z1 O₂</th>
+          <th>Z2 CO₂</th><th>Z2 O₂</th>
+          <th>Z3 CO₂</th><th>Z3 O₂</th>
+        </tr>
+      </thead>
+      <tbody>${body}</tbody>
+    </table>`;
+}
+
+async function cargarHistorico() {
+  initHistoricoFechas();
+  const desde = $("#histDesde")?.value;
+  const hasta = $("#histHasta")?.value;
+  const resumen = $("#historicoResumen");
+  const wrap = $("#historicoTableWrap");
+  if (!desde || !hasta) {
+    showToast("Indique desde y hasta");
+    return;
+  }
+  if (resumen) resumen.textContent = "Consultando…";
+  if (wrap) wrap.innerHTML = '<p class="muted">Cargando histórico…</p>';
+  const btn = $("#btnHistBuscar");
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch(
+      `${API}/lecturas?desde=${encodeURIComponent(desde)}&hasta=${encodeURIComponent(hasta)}`
+    );
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    state.historicoCargado = true;
+    renderHistoricoTabla(data);
+  } catch (e) {
+    state.historicoCargado = false;
+    if (resumen) resumen.textContent = "";
+    if (wrap) wrap.innerHTML = `<p class="muted">No se pudo consultar: ${escapeHtml(e.message)}</p>`;
+    showToast(`Histórico: ${e.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function bindEvents() {
   $("#btnRefresh").addEventListener("click", () => loadEstado());
   $("#btnToggleComandos")?.addEventListener("click", () => toggleComandosPanel());
@@ -842,8 +1064,17 @@ function bindEvents() {
   ["objCo2Z1", "objCo2Z2", "objCo2Z3", "objO2Z1", "objO2Z2", "objO2Z3"].forEach((id) => {
     $(`#${id}`)?.addEventListener("input", onObjetivosInputChange);
   });
+  $("#btnGuardarObjetivos")?.addEventListener("click", guardarObjetivos);
   $("#btnAplicarObjetivos")?.addEventListener("click", aplicarObjetivos);
   $("#btnRestaurarObjetivos")?.addEventListener("click", restaurarObjetivos);
+  document.querySelectorAll(".view-tab").forEach((btn) => {
+    btn.addEventListener("click", () => setView(btn.dataset.view));
+  });
+  $("#historicoForm")?.addEventListener("submit", (e) => {
+    e.preventDefault();
+    cargarHistorico();
+  });
+  initHistoricoFechas();
 
   let searchDebounce;
   $("#searchComando").addEventListener("input", (e) => {

@@ -9,7 +9,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/cerro-prieto/css/styles.css?v=inyector2" />
+  <link rel="stylesheet" href="/cerro-prieto/css/styles.css?v=lecturas1" />
 </head>
 <body>
   <div class="app">
@@ -26,6 +26,12 @@
 
     <p class="updated-line" id="updatedLine">Cargando último dato…</p>
 
+    <nav class="view-tabs" aria-label="Vistas del panel">
+      <button type="button" class="view-tab active" data-view="vivo" id="tabVivo">En vivo</button>
+      <button type="button" class="view-tab" data-view="historico" id="tabHistorico">Histórico O₂ / CO₂</button>
+    </nav>
+
+    <div id="viewVivo">
     <!-- 1. Enviar comando -->
     <section class="card collapsible-panel comandos-panel" id="comandosPanel">
       <button type="button" class="btn-panel-toggle" id="btnToggleComandos" aria-expanded="false" aria-controls="comandosPanelBody">
@@ -61,13 +67,15 @@
         <li><span class="leyenda-dot leyenda-warn"></span> ±2 %</li>
         <li><span class="leyenda-dot leyenda-danger"></span> &gt; ±2 %</li>
       </ul>
+      <p class="hint hint-tight">Estado 11, 12 y 13: control de zona 1, 2 y 3. 1 = activo. Si CO₂ u O₂ llegan en 0 o 25.5, es reinicio: se muestra el último valor válido y la flecha de tendencia.</p>
 
       <section class="collapsible-panel objetivos-panel-wrap" id="objetivosPanel">
         <button type="button" class="btn-panel-toggle btn-panel-secondary" id="btnToggleObjetivos" aria-expanded="false" aria-controls="objetivosPanelBody">
           <span class="toggle-icon" aria-hidden="true">▸</span>
-          <span class="toggle-label">Modificar objetivos CO₂ / O₂</span>
+          <span class="toggle-label">Objetivos CO₂ / O₂</span>
         </button>
         <div class="panel-body hidden" id="objetivosPanelBody">
+          <p class="hint">Guardar deja los setpoints en el panel para comparar las lecturas. No envía comandos al equipo.</p>
           <div class="objetivos-grid">
             <div class="objetivos-col">
               <span class="obj-col-title">CO₂ objetivo (%)</span>
@@ -84,7 +92,8 @@
           </div>
           <div class="objetivos-actions">
             <button type="button" class="btn btn-ghost btn-touch" id="btnRestaurarObjetivos">Predeterminados</button>
-            <button type="button" class="btn btn-primary btn-touch" id="btnAplicarObjetivos">Guardar y aplicar al equipo</button>
+            <button type="button" class="btn btn-primary btn-touch" id="btnGuardarObjetivos">Guardar objetivos</button>
+            <button type="button" class="btn btn-ghost btn-touch" id="btnAplicarObjetivos">Enviar al equipo</button>
           </div>
           <p class="objetivos-meta muted" id="objetivosMeta" aria-live="polite"></p>
           <div class="objetivos-historial-wrap">
@@ -156,6 +165,27 @@
         </ul>
       </div>
     </section>
+    </div>
+
+    <div id="viewHistorico" class="hidden">
+      <section class="card" aria-labelledby="historicoTitle">
+        <h2 id="historicoTitle">Histórico O₂ / CO₂</h2>
+        <p class="hint">Lecturas guardadas del equipo. Un reinicio (0 o 25.5) no se muestra como medición: queda el último valor válido.</p>
+        <form class="historico-filtros" id="historicoForm">
+          <label class="hist-label">Desde
+            <input type="date" id="histDesde" required />
+          </label>
+          <label class="hist-label">Hasta
+            <input type="date" id="histHasta" required />
+          </label>
+          <button type="submit" class="btn btn-primary btn-touch" id="btnHistBuscar">Consultar</button>
+        </form>
+        <p class="historico-resumen muted" id="historicoResumen" aria-live="polite"></p>
+        <div class="historico-table-wrap" id="historicoTableWrap">
+          <p class="muted">Elija un rango y consulte.</p>
+        </div>
+      </section>
+    </div>
   </div>
 
   <dialog class="modal" id="confirmModal">
@@ -184,6 +214,6 @@
 
   <div class="toast hidden" id="toast"></div>
 
-  <script src="/cerro-prieto/js/app.js?v=objetivos1" type="module"></script>
+  <script src="/cerro-prieto/js/app.js?v=lecturas1" type="module"></script>
 </body>
 </html>

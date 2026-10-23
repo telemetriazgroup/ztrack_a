@@ -10,7 +10,9 @@ from app.functions.cerro_prieto import (
     CERRO_PRIETO_IMEI,
     aplicar_objetivos_panel,
     enviar_comando_panel,
+    guardar_objetivos_panel,
     listar_historial_objetivos,
+    listar_lecturas_gas,
     obtener_objetivos_guardados,
     obtener_panel_estado,
 )
@@ -68,14 +70,39 @@ async def get_historial_objetivos():
     return {"historial": await listar_historial_objetivos()}
 
 
+@router.post("/objetivos")
+async def guardar_objetivos(body: ObjetivosBody):
+    """Guarda los setpoints en el panel, sin encolar comandos al equipo."""
+    try:
+        return await guardar_objetivos_panel(
+            co2=body.co2,
+            o2=body.o2,
+            user=body.user or "cerro_prieto_panel",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/lecturas")
+async def historico_lecturas(desde: str, hasta: str):
+    """Histórico de CO₂ y O₂ entre dos fechas (AAAA-MM-DD)."""
+    try:
+        return await listar_lecturas_gas(desde, hasta)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.post("/objetivos/aplicar")
 async def aplicar_objetivos(body: ObjetivosBody):
     """Encola comandos de objetivo CO₂ y O₂ para las 3 zonas."""
-    return await aplicar_objetivos_panel(
-        co2=body.co2,
-        o2=body.o2,
-        user=body.user or "cerro_prieto_panel",
-    )
+    try:
+        return await aplicar_objetivos_panel(
+            co2=body.co2,
+            o2=body.o2,
+            user=body.user or "cerro_prieto_panel",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.post("/comando")

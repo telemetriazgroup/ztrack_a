@@ -4,6 +4,9 @@ from datetime import datetime
 from app.functions.cerro_prieto import (
     CERRO_PRIETO_ACCIONES,
     _serialize_datos_total,
+    avanzar_canales,
+    canales_iniciales,
+    es_lectura_reinicio,
     evaluar_desviacion,
     objetivos_para_api,
     parse_d02,
@@ -11,6 +14,7 @@ from app.functions.cerro_prieto import (
     parse_rs,
     resolver_accion,
     starcool_bloques_desde_d02,
+    tendencia_entre,
 )
 
 RS_EJEMPLO = (
@@ -64,7 +68,12 @@ def test_parse_d02_zonas():
     assert d["zonas"][3]["tipo"] == "o2"
     assert d["zonas"][3]["estado"] == "ok"
     assert len(d["por_zona"]) == 3
-    assert len(d["flags"]) == 4
+    assert len(d["flags"]) == 1
+    assert d["flags"][0]["label"] == "Estado 10"
+    assert d["por_zona"][0]["control"]["activo"] is False
+    assert d["por_zona"][0]["control"]["valor"] == 0
+    assert d["por_zona"][1]["control"]["activo"] is True
+    assert d["por_zona"][2]["control"]["activo"] is False
     assert len(d["compresores"]) == 2
     assert d["compresores"][0]["numero"] == 1
     assert d["compresores"][0]["valor"] == 1
@@ -107,6 +116,70 @@ def test_objetivos_para_api_incluye_defaults():
     assert o["co2"]["1"] == 9
     assert o["defaults"]["co2"]["1"] == 8
     assert o["defaults"]["o2"]["3"] == 8
+
+
+def test_reinicio_no_pisa_ultimo_valido():
+    assert es_lectura_reinicio(0) is True
+    assert es_lectura_reinicio(0.0) is True
+    assert es_lectura_reinicio(25.5) is True
+    assert es_lectura_reinicio(25.50) is True
+    assert es_lectura_reinicio(6.1) is False
+    assert es_lectura_reinicio(None) is False
+    assert tendencia_entre(None, 6.1) is None
+    assert tendencia_entre(6.0, 6.4) == "sube"
+    assert tendencia_entre(6.4, 6.0) == "baja"
+    assert tendencia_entre(6.0, 6.0) is None
+
+    canales = canales_iniciales()
+    t0 = datetime(2026, 10, 23, 10, 0, 0)
+    gases = {
+        "co2": {"1": 6.1, "2": 4.7, "3": 8.3},
+        "o2": {"1": 4.0, "2": 10.4, "3": 11.9},
+    }
+    canales, vis = avanzar_canales(canales, gases, t0)
+    assert vis["co2"]["1"]["valor"] == 6.1
+    assert vis["co2"]["1"]["tendencia"] is None
+
+    gases_sube = {
+        "co2": {"1": 6.4, "2": 4.7, "3": 8.0},
+        "o2": {"1": 3.5, "2": 10.4, "3": 11.9},
+    }
+    canales, vis = avanzar_canales(canales, gases_sube, datetime(2026, 10, 23, 10, 1, 0))
+    assert vis["co2"]["1"]["tendencia"] == "sube"
+    assert vis["co2"]["3"]["tendencia"] == "baja"
+    assert vis["o2"]["1"]["tendencia"] == "baja"
+
+    igual = {
+        "co2": {"1": 6.4, "2": 4.7, "3": 8.0},
+        "o2": {"1": 3.5, "2": 10.4, "3": 11.9},
+    }
+    canales, vis = avanzar_canales(canales, igual, datetime(2026, 10, 23, 10, 1, 30))
+    assert vis["co2"]["1"]["tendencia"] == "sube"
+    assert vis["o2"]["1"]["tendencia"] == "baja"
+    assert canales["co2"]["1"]["tendencia"] == "sube"
+
+    reinicio = {
+        "co2": {"1": 0, "2": 25.5, "3": 8.0},
+        "o2": {"1": 25.5, "2": 0, "3": 11.9},
+    }
+    canales, vis = avanzar_canales(canales, reinicio, datetime(2026, 10, 23, 10, 2, 0))
+    assert vis["co2"]["1"]["reinicio"] is True
+    assert vis["co2"]["1"]["valor"] == 6.4
+    assert vis["co2"]["1"]["tendencia"] == "sube"
+    assert vis["co2"]["1"]["valor_crudo"] == 0
+    assert vis["co2"]["2"]["valor"] == 4.7
+    assert vis["o2"]["1"]["valor"] == 3.5
+    assert vis["o2"]["2"]["reinicio"] is True
+    assert canales["co2"]["1"]["valor"] == 6.4
+    assert canales["o2"]["1"]["valor"] == 3.5
+
+
+def test_parse_d02_marca_control_en_zonas():
+    d = parse_d02("1,2,3,4,5,6,70,80,90,1,1,0,1,0,1")
+    assert d["por_zona"][0]["control"]["etiqueta"] == "Control activo"
+    assert d["por_zona"][1]["control"]["activo"] is False
+    assert d["por_zona"][2]["control"]["activo"] is True
+    assert [f["label"] for f in d["flags"]] == ["Estado 10"]
 
 
 def test_evaluar_desviacion_colores():

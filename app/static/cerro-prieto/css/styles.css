@@ -285,6 +285,18 @@ code {
   font-variant-numeric: tabular-nums;
 }
 
+.sensor-cell .sensor-valor {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.2rem;
+}
+
+.sensor-cell .tendencia {
+  display: inline;
+  margin: 0;
+  font-size: 0.95em;
+}
+
 .flags-list {
   margin: 0;
   padding: 0;
@@ -734,8 +746,189 @@ code {
 
 .objetivos-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin: 0;
+}
+
+.objetivos-actions .btn-touch {
+  flex: 1 1 9.5rem;
+}
+
+.hint-tight {
+  margin-top: -0.35rem;
+}
+
+.view-tabs {
+  display: flex;
+  gap: 0.4rem;
+  margin: 0 0 1rem;
+}
+
+.view-tab {
+  flex: 1;
+  min-height: 44px;
+  border: 1px solid var(--border);
+  background: var(--card);
+  color: var(--muted);
+  border-radius: 10px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.view-tab.active {
+  color: #fff;
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+
+.zona-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.zona-head .zona-title {
+  margin: 0;
+}
+
+.control-badge {
+  flex-shrink: 0;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 0.2rem 0.55rem;
+  border: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.control-on {
+  color: #bbf7d0;
+  background: rgba(34, 197, 94, 0.18);
+  border-color: rgba(34, 197, 94, 0.55);
+}
+
+.control-off {
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.tendencia {
+  display: inline-block;
+  margin-left: 0.28rem;
+  font-size: 0.95em;
+  line-height: 1;
+}
+
+.tendencia-sube {
+  color: #86efac;
+}
+
+.tendencia-baja {
+  color: #fca5a5;
+}
+
+.sensor-valor .tendencia-sube,
+.sensor-valor .tendencia-baja {
+  color: inherit;
+}
+
+.sensor-reinicio,
+.hist-reinicio {
+  display: block;
+  margin-top: 0.2rem;
+  font-size: 0.65rem;
+  color: var(--warn);
+  font-weight: 600;
+}
+
+.historico-filtros {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  align-items: flex-end;
+  margin-bottom: 0.75rem;
+}
+
+.hist-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  flex: 1 1 9rem;
+}
+
+.hist-label input {
+  min-height: 44px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  padding: 0.4rem 0.55rem;
+}
+
+.historico-filtros .btn-touch {
+  flex: 0 0 auto;
+}
+
+.historico-resumen {
+  margin: 0 0 0.65rem;
+}
+
+.historico-table-wrap {
+  overflow: auto;
+  max-height: 70vh;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.historico-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.78rem;
+  min-width: 640px;
+}
+
+.historico-table th,
+.historico-table td {
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid var(--border);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.historico-table th:first-child,
+.historico-table td:first-child,
+.historico-table th[scope="row"] {
+  text-align: left;
+  font-weight: 500;
+}
+
+.historico-table thead th {
+  position: sticky;
+  top: 0;
+  background: #243044;
+  color: var(--muted);
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  z-index: 1;
+}
+
+.hist-val {
+  font-family: var(--mono);
+}
+
+.hist-reinicio {
+  display: block;
+  text-align: right;
 }
 
 .search-field-wrap {

@@ -9,10 +9,7 @@ from typing import Annotated
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from fastapi.encoders import jsonable_encoder
-
-from app.core.datetime_utils import server_now
 from app.functions.starcool import (
-    Guardar_Datos,
     buscar_comandos_starcool,
     buscar_imei_starcool,
     buscar_live,
@@ -30,27 +27,20 @@ from app.models.starcool import (
     StarcoolDispositivosRangoSchema,
 )
 from app.models.common import ResponseModel, BusquedaSchema, ComandoSchema
-from app.middleware.auth import progressive_auth
+from app.middleware.auth import DeviceAuthResult, make_progressive_auth
+from app.routes.telemetry_ingest import handle_telemetry_post
 
 router = APIRouter()
+_starcool_auth = make_progressive_auth(StarcoolSchema, "Starcool")
 
 
 @router.post("/", response_description="Datos Starcool agregados a la base de datos.")
 async def add_data(
     datos: StarcoolSchema = Body(...),
-    device=Depends(progressive_auth),
+    device: DeviceAuthResult = Depends(_starcool_auth),
 ):
     """Recepción de telemetría Starcool (S_{imei}_MM_YYYY)."""
-    received_at = server_now()
-    doc = datos.to_mongo_document(received_at=received_at, secured=device.secured)
-    comando = await Guardar_Datos(doc, secured=device.secured)
-    return {
-        "status": "ok",
-        "imei": datos.i,
-        "secured": device.secured,
-        "comando": comando,
-        "received_at": received_at.isoformat(),
-    }
+    return await handle_telemetry_post(datos, device, "Starcool")
 
 
 @router.post(

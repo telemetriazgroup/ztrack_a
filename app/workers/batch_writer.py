@@ -35,6 +35,14 @@ def _to_datetime(v) -> datetime:
         return server_now()
 
 
+def _prepare_doc_for_insert(d: dict, now: datetime) -> None:
+    """Normaliza campos antes de insert_many (misma lógica que fallback directo)."""
+    d.setdefault("estado", 1)
+    raw = d.get("received_at") or d.get("fecha") or now
+    d["fecha"] = _to_datetime(raw) if not isinstance(raw, datetime) else raw
+    d.setdefault("received_at", d["fecha"])
+
+
 def _handle_signal(signum, frame):
     global _shutdown
     logger.info("Shutdown señalado — esperando batch actual")
@@ -48,13 +56,7 @@ async def _insert_batch(documents: list[dict]) -> int:
     Usa received_at del doc para determinar mes/año.
     """
     from pymongo.errors import BulkWriteError
-    from app.database.mongodb import (
-        backup_db_configured,
-        bd_gene,
-        collection,
-        collection_backup,
-        es_tipo_respaldo,
-    )
+    from app.database.mongodb import bd_gene, collection
 
     # Agrupar por nombre de colección (imei + tipo + mes/año)
     by_collection: dict[str, list] = {}
@@ -74,27 +76,17 @@ async def _insert_batch(documents: list[dict]) -> int:
                 # Asegurar fecha, estado; normalizar datetime (Redis/JSON devuelve strings)
                 now = server_now()
                 for d in imei_docs:
-                    d.setdefault("estado", 1)
-                    raw = d.get("received_at") or d.get("fecha") or now
-                    d["fecha"] = _to_datetime(raw) if not isinstance(raw, datetime) else raw
-                    d.setdefault("received_at", d["fecha"])
+                    _prepare_doc_for_insert(d, now)
                 result = await col.insert_many(imei_docs, ordered=False)
                 inserted = len(result.inserted_ids)
                 total_inserted += inserted
-                t0 = imei_docs[0].get("tipo_dispositivo", "TermoKing")
-                if (
-                    es_tipo_respaldo(t0)
-                    and backup_db_configured()
-                ):
-                    try:
-                        col_b = collection_backup(col_name)
-                        await col_b.insert_many(imei_docs, ordered=False)
-                    except Exception as e:
-                        logger.warning(
-                            "Mongo backup: batch insert falló",
-                            coleccion=col_name,
-                            error=str(e),
-                        )
+                seen = set()
+                for d in imei_docs:
+                    im = d.get("i", "")
+                    tp = d.get("tipo_dispositivo", "TermoKing")
+                    if im and (im, tp) not in seen:
+                        seen.add((im, tp))
+                        await redis_service.register_imei_tipo(tp, im)
             except BulkWriteError as e:
                 inserted = e.details.get("nInserted", 0)
                 total_inserted += inserted

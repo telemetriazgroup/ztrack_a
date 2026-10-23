@@ -2,45 +2,59 @@
 app/functions/guardar_datos.py
 
 Implementa la función Guardar_Datos central, compartida por TermoKing y Tunel.
-
-LÓGICA ORIGINAL (portada sin cambios funcionales):
-  1. Guarda la trama en la colección del dispositivo (por IMEI)
-  2. Verifica/registra el dispositivo en 'dispositivos'
-  3. Busca y despacha comando pendiente de 'control'
-  4. Retorna el comando (o "sin comandos pendientes")
-
-ADAPTACIONES:
-  - La persistencia de la trama va por cola Redis (no bloquea el response)
-  - La consulta de comandos es SÍNCRONA (el dispositivo necesita la respuesta ya)
-  - Se agrega el campo 'secured' al registro de dispositivo
-  - Motor → PyMongo async (misma API, distinto import)
-
-CÓMO FUNCIONA EL FLUJO COMPLETO:
-  Dispositivo → POST /TermoKing/ → Guardar_Datos() → Redis queue → batch writer → MongoDB
-                                       ↓ síncrono
-                                  Consulta 'control'
-                                       ↓
-                                  Response con comando
 """
+import asyncio
+from datetime import datetime
 from typing import Optional
 
-from app.core.datetime_utils import server_now
+from pymongo import ReturnDocument
 
+from app.core.datetime_utils import server_now
 from app.core.logging import get_logger
+from app.core.metrics import (
+    CONTROL_COMMANDS_DISPATCHED,
+    DEVICE_AUTO_REGISTERED,
+    MONGO_INSERT_ERRORS,
+    REDIS_ENQUEUE_DURATION,
+    REDIS_ERRORS,
+    TELEMETRY_PERSIST,
+)
 from app.database.mongodb import (
-    backup_db_configured,
     bd_gene,
     crear_indices_coleccion_dispositivo,
-    crear_indices_coleccion_dispositivo_backup,
-    es_tipo_respaldo,
     get_control_collection,
-    get_control_collection_backup,
     get_dispositivos_collection,
-    get_dispositivos_collection_backup,
 )
+from app.functions.dashboard_equipos import registrar_equipo_por_ingesta
+from app.functions.persist_trama import insert_trama_direct
 from app.services import redis_service
 
 logger = get_logger(__name__)
+
+_MODULO_METRIC = {
+    "TermoKing": "termoking",
+    "Tunel": "tunel",
+    "Starcool": "starcool",
+}
+
+# Estados del documento de comando en *_control_MM_YYYY
+COMANDO_ESTADO_EJECUTADO = 0
+COMANDO_ESTADO_PENDIENTE = 1
+COMANDO_ESTADO_CANCELADO = 3
+
+
+def preparar_comando_para_insert(datos: dict) -> dict:
+    """
+    Normaliza documento al encolar en *_control_MM_YYYY.
+    estado: 1 pendiente (default), 3 cancelado, 0 solo tras despacho.
+    """
+    if datos.get("estado") is None:
+        datos["estado"] = COMANDO_ESTADO_PENDIENTE
+    if datos.get("status") is None:
+        datos["status"] = 1
+    if not datos.get("fecha_ejecucion"):
+        datos["fecha_ejecucion"] = None
+    return datos
 
 
 async def guardar_datos(
@@ -50,40 +64,46 @@ async def guardar_datos(
 ) -> str:
     """
     Función central equivalente a Guardar_Datos() del sistema original.
-
-    Args:
-        ztrack_data:      Documento MongoDB ya preparado (con received_at, secured, etc.)
-        secured:          True si el dispositivo autenticó con API Key.
-        tipo_dispositivo: "TermoKing", "Tunel", "Datos", "Starcool" o "Generador" (para el registro en 'dispositivos').
-
-    Returns:
-        String del comando a ejecutar, o "sin comandos pendientes".
-
-    DIFERENCIA CON EL ORIGINAL:
-      El original hacía insert_one directamente en MongoDB aquí.
-      Ahora hacemos lpush a Redis y el batch writer persiste de forma asíncrona.
-      Esto desacopla la recepción de la persistencia y elimina el bloqueo.
     """
     imei = ztrack_data.get("i", "")
     if not imei:
         return "sin comandos pendientes"
 
-    # Inyectar tipo para que batch_writer use la colección correcta (TK_/TUNEL_)
+    modulo = _MODULO_METRIC.get(tipo_dispositivo, "termoking")
     ztrack_data["tipo_dispositivo"] = tipo_dispositivo
 
-    # ── 1. Encolar trama en Redis (no bloqueante, < 1ms) ────────────────────
-    # Equivale al: await data_collection.insert_one(ztrack_data) del original
-    # pero sin bloquear el response al dispositivo.
-    enqueued = await redis_service.enqueue(ztrack_data)
-    if not enqueued:
-        # Redis caído: modo degradado, se loggea pero no se rechaza
-        logger.error("No se pudo encolar trama - Redis caído", imei=imei)
+    await redis_service.register_imei_tipo(tipo_dispositivo, imei)
 
-    # ── 2. Sincronizar colección TK_dispositivos_MM_YYYY o TUNEL_dispositivos_MM_YYYY
-    await _sync_dispositivos(imei=imei, ztrack_data=ztrack_data, secured=secured, tipo=tipo_dispositivo)
+    # ── 1. Encolar en Redis; fallback síncrono a MongoDB si falla ───────────
+    with REDIS_ENQUEUE_DURATION.time():
+        enqueued = await redis_service.enqueue(ztrack_data)
 
-    # ── 3. Consultar y despachar comando de TK_control_MM_YYYY o TUNEL_control_MM_YYYY
-    comando = await _get_and_dispatch_command(imei=imei, tipo=tipo_dispositivo)
+    if enqueued:
+        TELEMETRY_PERSIST.labels(modulo=modulo, path="redis").inc()
+    else:
+        REDIS_ERRORS.labels(operation="enqueue").inc()
+        persisted = await insert_trama_direct(ztrack_data, tipo_dispositivo)
+        if persisted:
+            TELEMETRY_PERSIST.labels(modulo=modulo, path="mongo_fallback").inc()
+        else:
+            TELEMETRY_PERSIST.labels(modulo=modulo, path="failed").inc()
+            MONGO_INSERT_ERRORS.inc()
+            logger.error(
+                "Trama no persistida (Redis caído y fallback Mongo falló)",
+                imei=imei,
+                tipo=tipo_dispositivo,
+            )
+
+    # ── 2. Sincronizar dispositivos + despachar comando (en paralelo) ───────
+    _, comando = await asyncio.gather(
+        _sync_dispositivos(
+            imei=imei,
+            ztrack_data=ztrack_data,
+            secured=secured,
+            tipo=tipo_dispositivo,
+        ),
+        _get_and_dispatch_command(imei=imei, tipo=tipo_dispositivo),
+    )
 
     return comando
 
@@ -94,9 +114,7 @@ async def _sync_dispositivos(
     secured: bool,
     tipo: str = "TermoKing",
 ) -> None:
-    """
-    Sincroniza en TK_dispositivos_MM_YYYY o TUNEL_dispositivos_MM_YYYY.
-    """
+    """Sincroniza en TK_dispositivos_MM_YYYY o TUNEL_dispositivos_MM_YYYY."""
     dispositivos_col = get_dispositivos_collection(tipo)
     ip_raw = ztrack_data.get("ip", "")
     ip_clean = ip_raw.split(",")[0].strip() if ip_raw else None
@@ -105,12 +123,11 @@ async def _sync_dispositivos(
         {"imei": imei, "estado": 1}, {"_id": 0}
     )
 
+    es_nuevo_en_mes = False
     if dispositivo_encontrado:
-        # Existe → actualizar ultimo_dato (igual que el original)
         update_fields = {"ultimo_dato": server_now()}
         if ip_clean:
             update_fields["last_ip"] = ip_clean
-        # Migración silenciosa: si el dispositivo acaba de activar seguridad
         if secured and not dispositivo_encontrado.get("secured", False):
             update_fields["secured"] = True
             logger.info("Dispositivo migrado a modo seguro", imei=imei)
@@ -119,103 +136,91 @@ async def _sync_dispositivos(
             {"imei": imei, "estado": 1},
             {"$set": update_fields},
         )
-        if es_tipo_respaldo(tipo) and backup_db_configured():
-            try:
-                bcol = get_dispositivos_collection_backup(tipo)
-                await bcol.update_one(
-                    {"imei": imei, "estado": 1},
-                    {"$set": update_fields},
-                )
-            except Exception as e:
-                logger.warning(
-                    "Mongo backup: sync dispositivos update falló",
-                    imei=imei,
-                    error=str(e),
-                )
     else:
-        # No existe → auto-registrar (igual que el original)
-        # La trama NO se guarda aquí: va por Redis → batch_writer → TK_{imei}_MM_YYYY
         now = server_now()
-        doc_disp = {
-            "imei": imei,
-            "estado": 1,
-            "fecha": now,
-            "tipo": tipo,
-            "ultimo_dato": now,
-            "last_ip": ip_clean,
-            "secured": secured,
-            "api_key_hash": None,  # None hasta que tenga firmware actualizado
-        }
         try:
-            await dispositivos_col.insert_one(doc_disp)
-            # Crear índices en la colección de tramas del dispositivo (TK_{imei}_MM_YYYY)
+            await dispositivos_col.insert_one({
+                "imei": imei,
+                "estado": 1,
+                "fecha": now,
+                "tipo": tipo,
+                "ultimo_dato": now,
+                "last_ip": ip_clean,
+                "secured": secured,
+                "api_key_hash": None,
+            })
+            es_nuevo_en_mes = True
+            DEVICE_AUTO_REGISTERED.labels(tipo=tipo).inc()
             col_name = bd_gene(imei, tipo)
             await crear_indices_coleccion_dispositivo(col_name)
-            if es_tipo_respaldo(tipo) and backup_db_configured():
-                try:
-                    bcol = get_dispositivos_collection_backup(tipo)
-                    doc_b = {k: v for k, v in doc_disp.items() if k != "_id"}
-                    await bcol.insert_one(doc_b)
-                    await crear_indices_coleccion_dispositivo_backup(col_name)
-                except Exception as e:
-                    logger.warning(
-                        "Mongo backup: sync dispositivos insert falló",
-                        imei=imei,
-                        error=str(e),
-                    )
             logger.info("Dispositivo auto-registrado", imei=imei, tipo=tipo, secured=secured)
         except Exception as e:
             if "duplicate key" not in str(e).lower():
                 logger.error("Error al auto-registrar dispositivo", imei=imei, error=str(e))
 
+    try:
+        await registrar_equipo_por_ingesta(imei, tipo, es_nuevo_en_mes=es_nuevo_en_mes)
+    except Exception as e:
+        logger.warning("Catálogo dashboard no actualizado", imei=imei, tipo=tipo, error=str(e))
+
+
+def _meses_control_a_consultar(ref: datetime) -> list[datetime]:
+    """
+    Mes actual (GMT-5) y el anterior, para despacho de comandos en cambio de mes.
+    Usa día 15 para construir un datetime dentro del mes (nombre de colección).
+    """
+    meses = [ref]
+    y, m = ref.year, ref.month
+    if m == 1:
+        meses.append(ref.replace(year=y - 1, month=12, day=15))
+    else:
+        meses.append(ref.replace(month=m - 1, day=15))
+    return meses
+
 
 async def _get_and_dispatch_command(imei: str, tipo: str = "TermoKing") -> str:
     """
-    Consulta TK_control_MM_YYYY o TUNEL_control_MM_YYYY y despacha comando.
+    Despacho atómico: find_one_and_update evita doble entrega con varios workers.
+    Solo despacha comandos con estado=1 (pendiente). estado=3 es cancelado y se ignora.
+    Busca en la colección del mes actual (GMT-5) y, si no hay, en la del mes anterior.
     """
-    control_col = get_control_collection(tipo)
+    modulo = _MODULO_METRIC.get(tipo, "termoking")
+    now = server_now()
 
     try:
-        control_encontrado = await control_col.find_one(
-            {"imei": imei, "estado": {"$gt": 0}},
-            {"_id": 0},
-        )
+        for ref_mes in _meses_control_a_consultar(now):
+            control_col = get_control_collection(tipo, ref_mes)
+            control_encontrado = await control_col.find_one_and_update(
+                {"imei": imei, "estado": COMANDO_ESTADO_PENDIENTE},
+                {
+                    "$set": {
+                        "estado": COMANDO_ESTADO_EJECUTADO,
+                        "status": 2,
+                        "fecha_ejecucion": now,
+                    },
+                },
+                return_document=ReturnDocument.BEFORE,
+                projection={"_id": 0, "comando": 1, "estado": 1},
+            )
 
-        if not control_encontrado:
-            return "sin comandos pendientes"
+            if not control_encontrado:
+                continue
 
-        comando = control_encontrado.get("comando", "sin comandos pendientes")
-        estado_actual = control_encontrado.get("estado", 1)
+            comando = control_encontrado.get("comando") or "sin comandos pendientes"
+            if not comando or comando == "sin comandos pendientes":
+                continue
 
-        # Mismo cálculo que el original
-        veces_control = estado_actual - 1 if comando else 0
+            CONTROL_COMMANDS_DISPATCHED.labels(modulo=modulo).inc()
+            logger.info(
+                "Comando despachado",
+                imei=imei,
+                comando=comando,
+                tipo=tipo,
+                coleccion=control_col.name,
+            )
+            return comando
 
-        fe = server_now()
-        set_cmd = {
-            "estado": veces_control,
-            "status": 2,                    # status=2: ejecutado
-            "fecha_ejecucion": fe,
-        }
-        await control_col.update_one(
-            {"imei": imei, "estado": {"$gt": 0}},
-            {"$set": set_cmd},
-        )
-        if es_tipo_respaldo(tipo) and backup_db_configured():
-            try:
-                bcol = get_control_collection_backup(tipo)
-                await bcol.update_one(
-                    {"imei": imei, "estado": {"$gt": 0}},
-                    {"$set": set_cmd},
-                )
-            except Exception as e:
-                logger.warning(
-                    "Mongo backup: despacho comando falló",
-                    imei=imei,
-                    error=str(e),
-                )
-
-        logger.info("Comando despachado", imei=imei, comando=comando, intentos_restantes=veces_control)
-        return comando
+        return "sin comandos pendientes"
 
     except Exception as e:
         logger.error("Error al consultar comandos", imei=imei, error=str(e))

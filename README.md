@@ -3,9 +3,8 @@
 Sistema de telemetría IoT para dispositivos **TermoKing** y **Túnel**.  
 Adaptación del proyecto original con arquitectura de alta disponibilidad.
 
-docker compose up -d --build
 ---
-docker compose up --build
+
 ## Qué cambió vs. el proyecto original
 
 | Aspecto | Original | Esta versión |
@@ -97,14 +96,11 @@ MongoDB
 
 ### Opción 1: Docker (recomendado)
 
-**Stack con MongoDB en el servidor (no en contenedor) + Redis interno** (puerto 6380):
+**Stack con MongoDB externo + Redis interno** (puerto 6380):
 
 ```bash
 cp .env.example .env
-# Opcional: en .env pon MONGO_DETAILS_OK=mongodb://host.docker.internal:27017
-# (compose ya trae ese default). Equivale a tu Mongo en mongodb://localhost:27017 del SO.
-# Si no conecta: en mongod.conf permite el bridge Docker, p. ej. net.bindIp: 127.0.0.1,172.17.0.1
-# Respaldo externo: MONGO_BACKUP_URI=... — si no responde en ~2s al arrancar, se omite.
+# Editar .env: MONGO_DETAILS_OK (URL de tu MongoDB), BD_DETAILS_OK
 nano .env
 docker compose up -d
 curl http://localhost:9050/health
@@ -134,14 +130,10 @@ sudo systemctl start ztrack_api ztrack_batch
 
 | Modo | Comando | MongoDB | Redis |
 |------|---------|---------|-------|
-| Actual | `docker compose up -d` | Principal en el servidor (.env); respaldo opcional (`MONGO_BACKUP_URI`) | Contenedor, puerto **6380** |
-| Externos | `docker compose -f docker-compose.external.yml up -d` | Host / Atlas / enlace | Host / externo |
+| Actual | `docker compose up -d` | URL externa (.env) | Contenedor, puerto **6380** |
+| Externos | `docker compose -f docker-compose.external.yml up -d` | Host / Atlas / externo | Host / externo |
 
 **Redis en puerto 6380**: evita conflicto con otros Redis en 6379. Desde la red Docker, api/batch usan `redis:6379`; desde el host, `localhost:6380`.
-
-**Mongo en `localhost:27017` del servidor y Docker**: el compose define `DOCKER_ENV=1` y la app **reescribe** `localhost` / `127.0.0.1` en la URI hacia **`host.docker.internal`**, así puedes dejar `MONGO_DETAILS_OK=mongodb://localhost:27017` en `.env`. Además, `mongod` debe aceptar conexiones desde la red Docker (no solo `127.0.0.1`), p. ej. `bindIp` que incluya `172.17.0.1` o `0.0.0.0`.
-
-**Respaldo (`MONGO_BACKUP_URI`)**: al iniciar, si no hay respuesta en unos **2 segundos**, el respaldo se descarta y la API trabaja solo con el Mongo principal.
 
 ---
 
@@ -166,9 +158,6 @@ Compatible con el `.env` original:
 # Nombres del original (siguen funcionando)
 MONGO_DETAILS_OK=mongodb://localhost:27017
 BD_DETAILS_OK=ztrack_db
-# Opcional: respaldo (misma estructura de colecciones)
-# MONGO_BACKUP_URI=mongodb+srv://...
-# MONGO_BACKUP_DB=ztrack_db
 
 # Nuevas variables
 REDIS_HOST=localhost
@@ -193,6 +182,43 @@ Todas las rutas del original siguen funcionando **sin cambios en los clientes**:
 | POST | `/Tunel/` | ✅ Idéntica + campo `comando` en respuesta |
 | GET  | `/health` | 🆕 Nueva |
 | GET  | `/metrics` | 🆕 Nueva (Prometheus) |
+
+**Nuevas (paridad consultas multi-mes / ventana 12 h):** `POST /TermoKing/comando/buscar/`, `POST /TermoKing/dispositivos/periodo/`, `POST /TermoKing/dispositivos/reporte_global/`, `POST /TermoKing/dispositivos/reporte/` (clasificación online/wait/offline por `ultimo_dato`) y las mismas bajo `/Tunel/`. `POST /TermoKing/imei/` y `POST /Tunel/imei/` recorren varios meses si el rango lo cruza; sin fechas usan las últimas 12 h.
+
+**Decodificado (colecciones `{IMEI}_OFICIAL_{año}`):** `POST /TermoKing/decodificado/live/` y `POST /Tunel/decodificado/live/` último documento por `fecha`; `POST …/decodificado/imei/` por rango (12 h por defecto), uniendo colecciones si el rango cruza años. **Live (telemetría y decodificado):** con ≥5 caracteres en `imei` se busca por subcadena (índice en Redis + respaldo en `*_dispositivos_*`); varias coincidencias devuelven `detalle` y `ultimo` más reciente.
+
+---
+
+## Panel web de flota
+
+Interfaz para ver **último dato**, **estado** (online / en espera / offline) y **última trama** por IMEI (`i`):
+
+```text
+http://localhost:9050/dashboard/
+```
+
+La raíz `/` redirige al panel. Fechas mostradas en **GMT-5** (America/Lima). Al seleccionar un dispositivo se listan los últimos comandos ejecutados.
+
+API: `GET /api/dashboard/flota`, `GET /api/dashboard/dispositivo/{imei}/comandos`, `GET /api/dashboard/dispositivo/{imei}/ultima`, `POST /api/dashboard/decodificar` (hex → datos legibles).
+
+En el panel, pestaña **Decodificado** en la última trama: interpreta canales `d02`/`d03` (protocolo 1B02), CSV (`d07`), ASCII (`d01`) y muestra datos OFICIAL si existen.
+
+---
+
+## Monitoreo (Prometheus + Grafana)
+
+Con Docker Compose se levantan **Prometheus** (puerto 9090) y **Grafana** (puerto **9200**):
+
+```bash
+docker compose up -d
+# Grafana: http://localhost:9200  (usuario/contraseña: admin / ztrack por defecto)
+# Prometheus: http://localhost:9090
+# Métricas API: http://localhost:9050/metrics
+```
+
+Dashboard provisionado: **ZTRACK — Telemetría TermoKing / Túnel** (tramas/min, latencia P99, cola Redis, fallback Mongo, comandos, legacy vs secured).
+
+Variables opcionales en `.env`: `GRAFANA_ADMIN_USER`, `GRAFANA_ADMIN_PASSWORD`.
 
 ---
 

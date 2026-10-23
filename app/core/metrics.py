@@ -63,11 +63,18 @@ TELEMETRY_PAYLOAD_SIZE = Histogram(
     buckets=[128, 256, 512, 1024, 2048, 4096, 8192, 16384],
 )
 
+TELEMETRY_PERSIST = Counter(
+    "telemetry_persist_total",
+    "Tramas persistidas por ruta de almacenamiento.",
+    ["modulo", "path"],  # path: redis | mongo_fallback | failed
+)
+
 # ── COMANDOS DE CONTROL ──────────────────────────────────────────────────────
 
 CONTROL_COMMANDS_DISPATCHED = Counter(
     "control_commands_dispatched_total",
     "Comandos enviados a dispositivos vía respuesta HTTP POST.",
+    ["modulo"],
 )
 
 # ── DISPOSITIVOS ─────────────────────────────────────────────────────────────

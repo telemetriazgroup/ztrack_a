@@ -21,7 +21,11 @@ from pydantic import BaseModel, Field
 class ComandoSchema(BaseModel):
     """
     Esquema para insertar comandos de control a un dispositivo.
-    El campo 'estado' actúa como contador de intentos restantes.
+
+    estado en *_control_*:
+      1 = pendiente de envío al equipo
+      0 = ya despachado (ejecutado)
+      3 = cancelado (no se envía)
     """
     imei: str = Field(...)
     estado: Optional[int] = 1
@@ -54,6 +58,10 @@ class BusquedaSchema(BaseModel):
     imei: str = Field(...)
     fecha_inicio: Optional[str] = "0"
     fecha_fin: Optional[str] = "0"
+    mes_desde: Optional[int] = None
+    anio_desde: Optional[int] = None
+    mes_hasta: Optional[int] = None
+    anio_hasta: Optional[int] = None
 
     model_config = {
         "json_schema_extra": {
@@ -82,6 +90,35 @@ class BusquedaGeneral(BaseModel):
             }
         }
     }
+
+
+class BuscarComandosSchema(BaseModel):
+    """Búsqueda de comandos en TK_control_* / TUNEL_control_* (multi-mes)."""
+    imei: Optional[str] = None
+    fecha_inicio: Optional[str] = "0"
+    fecha_fin: Optional[str] = "0"
+    mes_desde: Optional[int] = None
+    anio_desde: Optional[int] = None
+    mes_hasta: Optional[int] = None
+    anio_hasta: Optional[int] = None
+
+
+class DispositivosPeriodoSchema(BaseModel):
+    """Listado de dispositivos en *_dispositivos_* para un rango de meses o fechas."""
+    fecha_inicio: Optional[str] = "0"
+    fecha_fin: Optional[str] = "0"
+    mes_desde: Optional[int] = None
+    anio_desde: Optional[int] = None
+    mes_hasta: Optional[int] = None
+    anio_hasta: Optional[int] = None
+
+
+class DispositivosReporteSchema(BaseModel):
+    """Reporte clasificado (online / wait / offline) para una colección mensual *_dispositivos_MM_YYYY."""
+    mes: int = Field(..., ge=1, le=12)
+    anio: int = Field(..., ge=2000, le=2100)
+    online_hasta_horas: float = Field(default=1.0, ge=0)
+    wait_hasta_horas: float = Field(default=24.0, ge=0)
 
 
 class BusquedaSchema_proceso(BaseModel):

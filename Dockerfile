@@ -32,6 +32,7 @@ ENV PATH=/home/ztrack/.local/bin:$PATH
 
 # Copiar código
 COPY --chown=ztrack:ztrack app/ ./app/
+# Incluye app/static/dashboard (panel web)
 COPY --chown=ztrack:ztrack main.py gunicorn.conf.py ./
 
 USER ztrack

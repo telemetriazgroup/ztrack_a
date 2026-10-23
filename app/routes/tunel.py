@@ -2,62 +2,49 @@
 app/routes/tunel.py
 Rutas del módulo Túnel. Adaptación del original server/routes/tunel.py.
 """
-from typing import Annotated
-
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends
 from fastapi.encoders import jsonable_encoder
 
-from app.core.datetime_utils import server_now
 from app.functions.tunel import (
-    Guardar_Datos,
     Procesar_Trama,
-    buscar_comandos_tunel,
-    buscar_imei_tunel,
+    buscar_imei,
     insertar_comando,
     datos_totales,
-    datos_totales_ok,
     grafica_total,
+    datos_totales_ok,
     grafica_total_ok,
     buscar_live,
+    buscar_live_decodificado,
+    buscar_imei_decodificado,
     procesar_data_termoking,
-    listar_dispositivos_tunel,
-    reporte_dispositivos_tunel,
-    reporte_dispositivos_tunel_global,
+    buscar_comandos_tunel,
+    dispositivos_periodo_tunel,
+    reporte_global_tunel,
+    dispositivos_reporte_tunel,
 )
-from app.models.tunel import (
-    TunelSchema,
-    TunelBuscarComandosSchema,
-    TunelBuscarImeiSchema,
-    TunelDispositivosPeriodoSchema,
-    TunelDispositivosRangoSchema,
-)
+from app.models.tunel import TunelSchema
 from app.models.common import (
     ResponseModel,
     BusquedaSchema,
     ComandoSchema,
+    BuscarComandosSchema,
+    DispositivosPeriodoSchema,
+    DispositivosReporteSchema,
 )
-from app.middleware.auth import progressive_auth
+from app.middleware.auth import DeviceAuthResult, make_progressive_auth
+from app.routes.telemetry_ingest import handle_telemetry_post
 
 router = APIRouter()
+_tunel_auth = make_progressive_auth(TunelSchema, "Tunel")
 
 
 @router.post("/", response_description="Datos agregados a la base de datos.")
 async def add_data(
-    request: Request,
     datos: TunelSchema = Body(...),
-    device=Depends(progressive_auth),
+    device: DeviceAuthResult = Depends(_tunel_auth),
 ):
-    """Recepción de telemetría Túnel con Seguridad Progresiva."""
-    received_at = server_now()
-    doc = datos.to_mongo_document(received_at=received_at, secured=device.secured)
-    comando = await Guardar_Datos(doc, secured=device.secured)
-    return {
-        "status": "ok",
-        "imei": datos.i,
-        "secured": device.secured,
-        "comando": comando,
-        "received_at": received_at.isoformat(),
-    }
+    """Recepción de telemetría Túnel (ingesta compartida + métricas Prometheus)."""
+    return await handle_telemetry_post(datos, device, "Tunel")
 
 
 @router.get("/PreTermoking/", response_description="Pre-procesamiento.")
@@ -72,20 +59,21 @@ async def buscar_live_ok(datos: BusquedaSchema = Body(...)):
 
 
 @router.post(
-    "/comando/buscar/",
-    response_description="Listar comandos TUNEL_control (12 h o rango).",
+    "/decodificado/live/",
+    response_description="Último dato decodificado {IMEI}_TUNEL_OFICIAL_{año} (parcial ≥5 chars).",
 )
-async def buscar_comandos_tunel_ok(
-    filtro: Annotated[TunelBuscarComandosSchema, Body()] = TunelBuscarComandosSchema(),
-):
-    try:
-        return await buscar_comandos_tunel(
-            imei=filtro.imei,
-            fecha_inicio=filtro.fecha_inicio,
-            fecha_fin=filtro.fecha_fin,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+async def buscar_live_decodificado_ok(datos: BusquedaSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_live_decodificado(datos)
+
+
+@router.post(
+    "/decodificado/imei/",
+    response_description="Decodificados en {IMEI}_TUNEL_OFICIAL_{año} por IMEI y fechas (12 h por defecto; multi-año).",
+)
+async def buscar_imei_decodificado_ok(datos: BusquedaSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_imei_decodificado(datos)
 
 
 @router.post("/comando/", response_description="Insertar comando.")
@@ -94,16 +82,34 @@ async def add_comando(datos: ComandoSchema = Body(...)):
     return await insertar_comando(datos)
 
 
-@router.post("/imei/", response_description="Tramas por IMEI (12 h o rango; TUNEL_{imei}_mes_año).")
-async def buscar_imei_ok(filtro: TunelBuscarImeiSchema = Body(...)):
-    try:
-        return await buscar_imei_tunel(
-            imei=filtro.imei,
-            fecha_inicio=filtro.fecha_inicio,
-            fecha_fin=filtro.fecha_fin,
-        )
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
+@router.post("/comando/buscar/", response_description="Buscar comandos en TUNEL_control (multi-mes).")
+async def buscar_comandos_ok(datos: BuscarComandosSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_comandos_tunel(datos)
+
+
+@router.post("/dispositivos/periodo/", response_description="Listar dispositivos en rango.")
+async def dispositivos_periodo_ok(datos: DispositivosPeriodoSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await dispositivos_periodo_tunel(datos)
+
+
+@router.post("/dispositivos/reporte_global/", response_description="Resumen agregado de dispositivos.")
+async def dispositivos_reporte_global_ok(datos: DispositivosPeriodoSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await reporte_global_tunel(datos)
+
+
+@router.post("/dispositivos/reporte/", response_description="Clasificación online / wait / offline por colección mensual.")
+async def dispositivos_reporte_ok(datos: DispositivosReporteSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await dispositivos_reporte_tunel(datos)
+
+
+@router.post("/imei/", response_description="Buscar por IMEI.")
+async def buscar_imei_ok(datos: BusquedaSchema = Body(...)):
+    datos = jsonable_encoder(datos)
+    return await buscar_imei(datos)
 
 
 @router.post("/ListarTabla/", response_description="Listar tabla.")
@@ -128,39 +134,6 @@ async def buscar_grafica_ok(datos: BusquedaSchema = Body(...)):
 async def buscar_grafica_okok(datos: BusquedaSchema = Body(...)):
     datos = jsonable_encoder(datos)
     return await grafica_total_ok(datos)
-
-
-@router.post(
-    "/dispositivos/listar/",
-    response_description="Lista equipos Túnel en TUNEL_dispositivos_MES_AÑO.",
-)
-async def listar_dispositivos_tunel_ok(
-    periodo: Annotated[TunelDispositivosPeriodoSchema, Body()] = TunelDispositivosPeriodoSchema(),
-):
-    return await listar_dispositivos_tunel(mes=periodo.mes, anio=periodo.anio)
-
-
-@router.post(
-    "/dispositivos/reporte/",
-    response_description="Reporte online / wait / offline (ultimo_dato).",
-)
-async def reporte_dispositivos_tunel_ok(
-    periodo: Annotated[TunelDispositivosPeriodoSchema, Body()] = TunelDispositivosPeriodoSchema(),
-):
-    return await reporte_dispositivos_tunel(mes=periodo.mes, anio=periodo.anio)
-
-
-@router.post(
-    "/dispositivos/reporte-global/",
-    response_description="Reporte multi-mes (TUNEL_dispositivos).",
-)
-async def reporte_dispositivos_tunel_global_ok(rango: TunelDispositivosRangoSchema = Body(...)):
-    return await reporte_dispositivos_tunel_global(
-        mes_desde=rango.mes_desde,
-        anio_desde=rango.anio_desde,
-        mes_hasta=rango.mes_hasta,
-        anio_hasta=rango.anio_hasta,
-    )
 
 
 @router.get("/procesar_termo_king", response_description="Procesar tramas.")

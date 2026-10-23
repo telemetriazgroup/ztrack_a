@@ -16,7 +16,7 @@ from app.database.mongodb import (
     get_dispositivos_collection,
     mirror_insert_comando_control,
 )
-from app.functions.guardar_datos import guardar_datos
+from app.functions.guardar_datos import guardar_datos, preparar_comando_para_insert
 
 # Ventanas respecto a ultimo_dato (última trama recibida)
 _ONLINE_MAX = timedelta(hours=1)
@@ -291,9 +291,8 @@ async def Guardar_Datos(ztrack_data: dict, secured: bool = False) -> str:
 async def insertar_comando(datos: dict) -> dict:
     """Inserta comando en S_control_MM_YYYY."""
     control_col = get_control_collection("Starcool")
+    datos = preparar_comando_para_insert(datos)
     datos["fecha_creacion"] = server_now()
-    if not datos.get("fecha_ejecucion"):
-        datos["fecha_ejecucion"] = None
     result = await control_col.insert_one(datos)
     await mirror_insert_comando_control("Starcool", datos)
     nuevo = await control_col.find_one({"_id": result.inserted_id}, {"_id": 0})

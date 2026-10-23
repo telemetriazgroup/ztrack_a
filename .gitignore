@@ -1,4 +1,4 @@
-# ── Secretos y entorno local (no subir credenciales) ─────────────────────────
+# ── Secretos y entorno local ────────────────────────────────────────────────
 .env
 .env.local
 .env.*.local
@@ -31,13 +31,11 @@ MANIFEST
 pip-log.txt
 pip-delete-this-directory.txt
 
-# Virtualenvs
 .venv/
 venv/
 ENV/
 env/
 
-# Pytest / cobertura / herramientas
 .pytest_cache/
 .coverage
 .coverage.*
@@ -62,11 +60,7 @@ cython_debug/
 *.swo
 *~
 
-# VS Code / Cursor: descomenta si no quieres compartir ajustes del workspace
-# .vscode/
-# .cursor/
-
-# ── Sistema operativo ───────────────────────────────────────────────────────
+# ── SO ──────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 Desktop.ini
@@ -78,5 +72,5 @@ tmp/
 temp/
 *.tmp
 
-# ── Docker (overrides locales opcionales) ───────────────────────────────────
+# ── Docker ──────────────────────────────────────────────────────────────────
 docker-compose.override.yml

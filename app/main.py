@@ -7,7 +7,7 @@ CAMBIOS vs. original:
   1. Se agrega lifespan para gestionar conexiones MongoDB y Redis
      (antes Motor creaba la conexión al importar database.py — frágil)
   2. Se mantienen los mismos routers y prefijos del original:
-       /TermoKing  y  /Tunel
+       /TermoKing, /Tunel y /Starcool
   3. Se agrega endpoint /health para monitoreo
   4. Se agrega endpoint /metrics para Prometheus/Grafana
   5. CORS idéntico al original (allow_origins=["*"])
@@ -21,11 +21,13 @@ USO DIRECTO (desarrollo):
 """
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import get_settings
 from app.core.logging import get_logger, setup_logging
@@ -97,9 +99,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator:
         except (asyncio.CancelledError, asyncio.TimeoutError):
             pass
 
-    from app.services.generador_forward import close_generador_forward_client
-
-    await close_generador_forward_client()
     await redis_service.disconnect()
     await mongodb.disconnect()
     logger.info("Shutdown completo")
@@ -110,7 +109,7 @@ def create_app() -> FastAPI:
 
     app = FastAPI(
         title="ZTRACK API",
-        summary="Sistema de telemetría IoT bidireccional — TermoKing, Túnel y Datos",
+        summary="Sistema de telemetría IoT bidireccional — TermoKing, Túnel y Starcool",
         version="2.0.0",
         lifespan=lifespan,
         # Documentación: ENABLE_DOCS=true o APP_ENV != production
@@ -128,28 +127,42 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # ── Routers ────────────────────────────────────────────────────────────────
+    # ── Routers — mismos prefijos y tags del original ────────────────────────
     from app.routes.termoking import router as TermoKingRouter
     from app.routes.tunel import router as TunelRouter
-    from app.routes.datos import router as DatosRouter
     from app.routes.starcool import router as StarcoolRouter
-    from app.routes.generador import router as GeneradorRouter
+    from app.routes.dashboard_api import router as DashboardRouter
+    from app.routes.cerro_prieto_api import router as CerroPrietoRouter
 
     app.include_router(TermoKingRouter, tags=["TermoKing"], prefix="/TermoKing")
     app.include_router(TunelRouter, tags=["Tunel"], prefix="/Tunel")
-    app.include_router(DatosRouter, tags=["Datos"], prefix="/Datos")
     app.include_router(StarcoolRouter, tags=["Starcool"], prefix="/Starcool")
-    app.include_router(GeneradorRouter, tags=["Generador"], prefix="/Generador")
-    app.include_router(
-        GeneradorRouter,
-        tags=["Generador"],
-        prefix="/generadores",
-        include_in_schema=False,
-    )
+    app.include_router(DashboardRouter)
+    app.include_router(CerroPrietoRouter)
 
-    # ── Root — idéntico al original ──────────────────────────────────────────
+    # ── Panel web de flota (estático) ────────────────────────────────────────
+    dashboard_dir = Path(__file__).resolve().parent / "static" / "dashboard"
+    if dashboard_dir.is_dir():
+        app.mount(
+            "/dashboard",
+            StaticFiles(directory=str(dashboard_dir), html=True),
+            name="dashboard",
+        )
+
+    cerro_prieto_dir = Path(__file__).resolve().parent / "static" / "cerro-prieto"
+    if cerro_prieto_dir.is_dir():
+        app.mount(
+            "/cerro-prieto",
+            StaticFiles(directory=str(cerro_prieto_dir), html=True),
+            name="cerro_prieto",
+        )
+
+    # ── Root — redirige al panel o mensaje API ─────────────────────────────
     @app.get("/", tags=["Root"])
     async def read_root():
+        if dashboard_dir.is_dir():
+            from fastapi.responses import RedirectResponse
+            return RedirectResponse(url="/dashboard/", status_code=302)
         return {"message": "Welcome to app ztrack by 2.0!"}
 
     # ── Health check (nuevo) ─────────────────────────────────────────────────
@@ -159,20 +172,16 @@ def create_app() -> FastAPI:
         from app.services import redis_service
 
         mongo_ok = await mongodb.health_check()
-        mongo_backup_ok = await mongodb.health_check_backup()
         redis_ok = await redis_service.health_check()
         queues = await redis_service.get_queue_lengths()
 
         is_healthy = mongo_ok  # MongoDB es crítico; Redis es opcional
-        components = {
-            "mongodb": "ok" if mongo_ok else "error",
-            "redis": "ok" if redis_ok else "degraded",
-        }
-        if mongo_backup_ok is not None:
-            components["mongodb_backup"] = "ok" if mongo_backup_ok else "error"
         body = {
             "status": "healthy" if is_healthy else "degraded",
-            "components": components,
+            "components": {
+                "mongodb": "ok" if mongo_ok else "error",
+                "redis": "ok" if redis_ok else "degraded",
+            },
             "queues": queues,
         }
         if not is_healthy:
@@ -185,6 +194,16 @@ def create_app() -> FastAPI:
 
         @app.get(settings.metrics_path, include_in_schema=False)
         async def metrics():
+            from app.core.metrics import REDIS_QUEUE_LENGTH
+            from app.services import redis_service
+
+            try:
+                queues = await redis_service.get_queue_lengths()
+                REDIS_QUEUE_LENGTH.labels(queue="main").set(max(queues.get("main", 0), 0))
+                REDIS_QUEUE_LENGTH.labels(queue="dlq").set(max(queues.get("dlq", 0), 0))
+            except Exception:
+                pass
+
             return PlainTextResponse(
                 generate_latest().decode("utf-8"),
                 media_type=CONTENT_TYPE_LATEST,
